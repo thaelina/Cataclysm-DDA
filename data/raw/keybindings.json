@@ -903,6 +903,25 @@
   },
   {
     "type": "keybinding",
+    "id": "QUIT",
+    "category": "CRAFTING",
+    "name": "Close crafting menu",
+    "bindings": [
+      { "input_method": "keyboard_any", "key": "ESC" },
+      { "input_method": "keyboard_any", "key": "q" },
+      { "input_method": "keyboard_char", "key": "Q" },
+      { "input_method": "keyboard_code", "key": "q", "mod": [ "shift" ] }
+    ]
+  },
+  {
+    "type": "keybinding",
+    "id": "TOGGLE_INFO_NAV",
+    "category": "CRAFTING",
+    "name": "Navigate recipe details",
+    "bindings": [ { "input_method": "keyboard_any", "key": "SPACE" } ]
+  },
+  {
+    "type": "keybinding",
     "id": "LEVEL_UP",
     "name": "Go up",
     "bindings": [

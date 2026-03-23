@@ -1,6 +1,7 @@
 #include "crafting_gui_helpers.h"
 
 #include <algorithm>
+#include <bitset>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -23,6 +24,7 @@
 #include "inventory.h"
 #include "item.h"
 #include "item_factory.h"
+#include "iteminfo_query.h"
 #include "itype.h"
 #include "localized_comparator.h"
 #include "output.h"
@@ -723,18 +725,20 @@ static void result_item_header( item &dummy_item, int quantity_per_batch,
 static void result_item_details( item &dummy_item, int quantity_per_batch,
                                  std::vector<iteminfo> &details_info, const std::string &classification,
                                  bool uses_charges, const recipe &rec, int batch_size,
-                                 const std::string &description = {} )
+                                 const std::string &description = {},
+                                 const iteminfo_query *query = nullptr )
 {
     std::vector<iteminfo> temp_info;
     int total_quantity = quantity_per_batch * batch_size;
     result_item_header( dummy_item, quantity_per_batch, details_info, classification, uses_charges,
                         rec, batch_size, description );
+    const iteminfo_query *q = query ? query : &iteminfo_query::all;
     if( uses_charges ) {
         dummy_item.charges *= total_quantity;
-        dummy_item.info( true, temp_info );
+        dummy_item.info( temp_info, q, 1 );
         dummy_item.charges /= total_quantity;
     } else {
-        dummy_item.info( true, temp_info, total_quantity );
+        dummy_item.info( temp_info, q, total_quantity );
     }
     details_info.insert( std::end( details_info ), std::begin( temp_info ), std::end( temp_info ) );
 }
@@ -778,8 +782,59 @@ item get_recipe_result_item( const recipe &rec, Character &crafter )
     return dummy_result;
 }
 
+// Build an iteminfo_query that hides sections irrelevant for crafting decisions,
+// based on the result item type.  Always hidden: price, disassembly, empty pockets,
+// "you know nothing you could craft with it".  Conditionally hidden: melee stats
+// (unless it's a weapon), gun stats (unless it's a gun), armor stats (unless armor).
+static const iteminfo_query &crafting_query_for_item( const item &it )
+{
+    // Sections always hidden during crafting
+    static const std::vector<iteminfo_parts> always_hide = {
+        iteminfo_parts::BASE_PRICE,
+        iteminfo_parts::BASE_BARTER,
+        iteminfo_parts::DESCRIPTION,
+        iteminfo_parts::DESCRIPTION_COMPONENTS_DISASSEMBLE,
+        iteminfo_parts::DESCRIPTION_POCKETS,
+        iteminfo_parts::DESCRIPTION_CONTENTS,
+        iteminfo_parts::DESCRIPTION_APPLICABLE_RECIPES,
+        iteminfo_parts::DESCRIPTION_REPAIREDWITH,
+    };
+
+    static const std::vector<iteminfo_parts> melee_parts = {
+        iteminfo_parts::BASE_DAMAGE,
+        iteminfo_parts::BASE_TOHIT,
+        iteminfo_parts::BASE_MOVES,
+        iteminfo_parts::BASE_DPS,
+        iteminfo_parts::BASE_STAMINA,
+        iteminfo_parts::BASE_DPSTAM,
+        iteminfo_parts::DESCRIPTION_MELEEDMG,
+        iteminfo_parts::DESCRIPTION_MELEEDMG_CRIT,
+        iteminfo_parts::DESCRIPTION_MELEEDMG_TYPES,
+        iteminfo_parts::DESCRIPTION_MELEEDMG_MOVES,
+        iteminfo_parts::DESCRIPTION_TECHNIQUES,
+        iteminfo_parts::DESCRIPTION_APPLICABLEMARTIALARTS,
+    };
+
+    // Default: hide always_hide + melee
+    static const iteminfo_query q_default = [&]() {
+        std::vector<iteminfo_parts> hide = always_hide;
+        hide.insert( hide.end(), melee_parts.begin(), melee_parts.end() );
+        return iteminfo_query( iteminfo_query::all & ~iteminfo_query( hide ) );
+    }
+    ();
+
+    // Weapons: hide always_hide only (keep melee)
+    static const iteminfo_query q_melee = iteminfo_query(
+            iteminfo_query::all & ~iteminfo_query( always_hide ) );
+
+    if( it.is_melee() ) {
+        return q_melee;
+    }
+    return q_default;
+}
+
 std::vector<iteminfo> recipe_result_info( const recipe &rec, Character &crafter,
-        int batch_size, int panel_width )
+        int batch_size, int panel_width, bool full_info )
 {
     std::vector<iteminfo> info;
     std::vector<iteminfo> details_info;
@@ -793,6 +848,8 @@ std::vector<iteminfo> recipe_result_info( const recipe &rec, Character &crafter,
     int const makes_amount = rec.makes_amount();
     item dummy_container;
 
+    const iteminfo_query *query = full_info ? nullptr : &crafting_query_for_item( dummy_result );
+
     const std::string result_string = _( "Result" );
     const std::string recipe_output_string = _( "Recipe Outputs" );
     const std::string recipe_result_string = _( "Recipe Result" );
@@ -803,7 +860,7 @@ std::vector<iteminfo> recipe_result_info( const recipe &rec, Character &crafter,
     if( rec.container_id() == itype_id::NULL_ID() && !rec.has_byproducts() ) {
         insert_block_separator( details_info, recipe_result_string, panel_width );
         result_item_details( dummy_result, makes_amount, details_info, result_string,
-                             result_uses_charges, rec, batch_size, result_description );
+                             result_uses_charges, rec, batch_size, result_description, query );
     } else {
         insert_block_separator( info, recipe_output_string, panel_width );
         if( rec.container_id() != itype_id::NULL_ID() ) {
@@ -813,16 +870,16 @@ std::vector<iteminfo> recipe_result_info( const recipe &rec, Character &crafter,
             result_item_header( dummy_container, 1, info, in_container_string, false, rec, batch_size );
             insert_block_separator( details_info, recipe_result_string, panel_width );
             result_item_details( dummy_result, makes_amount, details_info, recipe_result_string,
-                                 result_uses_charges, rec, batch_size );
+                                 result_uses_charges, rec, batch_size, {}, query );
             insert_block_separator( details_info, container_info_string, panel_width );
             result_item_details( dummy_container, 1, details_info, container_string, false,
-                                 rec, batch_size );
+                                 rec, batch_size, {}, query );
         } else {
             result_item_header( dummy_result, makes_amount, info, recipe_result_string,
                                 result_uses_charges, rec, batch_size );
             insert_block_separator( details_info, recipe_result_string, panel_width );
             result_item_details( dummy_result, makes_amount, details_info, recipe_result_string,
-                                 result_uses_charges, rec, batch_size );
+                                 result_uses_charges, rec, batch_size, {}, query );
         }
         if( rec.has_byproducts() ) {
             result_byproducts( rec, info, details_info, batch_size, panel_width );
@@ -929,9 +986,23 @@ recipe_list_data build_recipe_list(
         result.entries = std::move( picking );
     } else {
         for( const recipe *r : picking ) {
-            if( uistate.hidden_recipes.find( r->ident() ) == uistate.hidden_recipes.end() ) {
-                result.entries.push_back( r );
+            if( uistate.hidden_recipes.find( r->ident() ) != uistate.hidden_recipes.end() ) {
+                continue;
             }
+            // Hide nested groups with no available child recipes
+            if( r->is_nested() ) {
+                bool has_child = false;
+                for( const recipe_id &child : r->nested_category_data ) {
+                    if( available_recipes.contains( &child.obj() ) ) {
+                        has_child = true;
+                        break;
+                    }
+                }
+                if( !has_child ) {
+                    continue;
+                }
+            }
+            result.entries.push_back( r );
         }
         result.num_hidden = picking.size() - result.entries.size();
     }
@@ -971,4 +1042,110 @@ recipe_list_data build_recipe_list(
     } );
 
     return result;
+}
+
+std::string approx_craft_time( int turns )
+{
+    if( turns <= 0 ) {
+        return _( "no time" );
+    }
+    const int min = turns / 60;
+    const int hr = min / 60;
+
+    if( min == 0 ) {
+        return _( "under a minute" );
+    }
+    if( min < 5 ) {
+        const int m = ( turns + 59 ) / 60;
+        return string_format( n_gettext( "about %d minute", "about %d minutes", m ), m );
+    }
+    if( min < 30 ) {
+        const int m = ( ( min + 4 ) / 5 ) * 5;
+        return string_format( n_gettext( "about %d minute", "about %d minutes", m ), m );
+    }
+    if( min < 60 ) {
+        const int m = ( ( min + 9 ) / 10 ) * 10;
+        if( m >= 60 ) {
+            return _( "about 1 hour" );
+        }
+        return string_format( n_gettext( "about %d minute", "about %d minutes", m ), m );
+    }
+    if( hr < 3 ) {
+        const int total_q = ( min + 14 ) / 15;
+        const int h = total_q / 4;
+        const int q = total_q % 4;
+        if( q == 0 ) {
+            return string_format( n_gettext( "about %d hour", "about %d hours", h ), h );
+        }
+        if( q == 2 ) {
+            return string_format( _( "about %d.5 hours" ), h );
+        }
+        return string_format( _( "about %d h %d min" ), h, q * 15 );
+    }
+    if( hr < 6 ) {
+        const int half_h = ( min + 29 ) / 30;
+        const int h = half_h / 2;
+        if( half_h % 2 ) {
+            return string_format( _( "about %d.5 hours" ), h );
+        }
+        return string_format( n_gettext( "about %d hour", "about %d hours", h ), h );
+    }
+    if( hr < 18 ) {
+        const int h = ( min + 59 ) / 60;
+        return string_format( n_gettext( "about %d hour", "about %d hours", h ), h );
+    }
+    if( hr < 48 ) {
+        const int h = ( ( hr + 3 ) / 4 ) * 4;
+        if( h <= 24 ) {
+            return _( "about a day" );
+        }
+        return string_format( _( "about %d hours" ), h );
+    }
+    const int d = ( hr + 23 ) / 24;
+    return string_format( n_gettext( "about %d day", "about %d days", d ), d );
+}
+
+nc_color activity_level_color( float exertion )
+{
+    if( exertion >= 6.0f ) {
+        return c_red;
+    } else if( exertion >= 4.0f ) {
+        return c_yellow;
+    } else if( exertion >= 2.0f ) {
+        return c_light_gray;
+    }
+    return c_green;
+}
+
+const std::string &find_tool_group_name( const std::vector<tool_comp> &alts )
+{
+    static std::map<std::vector<itype_id>, std::string> cache;
+    static bool built = false;
+    static const std::string empty;
+    if( !built ) {
+        for( const auto &pair : requirement_data::all() ) {
+            const requirement_data &rdata = pair.second;
+            if( !rdata.has_display_name() ) {
+                continue;
+            }
+            for( const auto &tg : rdata.get_tools() ) {
+                std::vector<itype_id> ids;
+                ids.reserve( tg.size() );
+                for( const tool_comp &tc : tg ) {
+                    ids.push_back( tc.type );
+                }
+                std::sort( ids.begin(), ids.end() );
+                cache.try_emplace( std::move( ids ), rdata.display_name() );
+            }
+        }
+        built = true;
+    }
+    std::vector<itype_id> ids;
+    ids.reserve( alts.size() );
+    for( const tool_comp &tc : alts ) {
+        ids.push_back( tc.type );
+    }
+    std::sort( ids.begin(), ids.end() );
+    auto it = cache.find( ids );
+    return it != cache.end() ? it->second : empty;
 }

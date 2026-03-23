@@ -17,6 +17,7 @@ class Character;
 class inventory;
 class recipe;
 class recipe_subset;
+struct tool_comp;
 
 // Returns true if the character cannot gain any skill or proficiency from this recipe.
 // Used to mark practice recipes as "useless" when the crafter already exceeds
@@ -126,8 +127,10 @@ item get_recipe_result_item( const recipe &rec, Character &crafter );
 // Generates iteminfo entries for the recipe result panel.
 // Covers result item, container (if any), byproducts (if any),
 // with section headers and quantity scaling for batch_size.
+// When full_info is false, irrelevant sections are filtered based on
+// the result item type (e.g. melee stats hidden for armor).
 std::vector<iteminfo> recipe_result_info( const recipe &rec, Character &crafter,
-        int batch_size, int panel_width );
+        int batch_size, int panel_width, bool full_info = true );
 
 // Return type for build_recipe_list().
 struct recipe_list_data {
@@ -160,5 +163,15 @@ recipe_list_data build_recipe_list(
 std::string list_nested( Character &crafter, const recipe *rec,
                          const recipe_subset &available_recipes,
                          int indent_level = 0 );
+
+// Ceil-rounded human-readable craft time string.  Input is game turns (seconds).
+std::string approx_craft_time( int turns );
+
+// Activity level color: green (none/light), gray (moderate), yellow (brisk/active), red (extreme).
+nc_color activity_level_color( float exertion );
+
+// Returns display name for a tool group if it matches a named requirement,
+// or empty string if no match.  Lazily builds a cache on first call.
+const std::string &find_tool_group_name( const std::vector<tool_comp> &alts );
 
 #endif // CATA_SRC_CRAFTING_GUI_HELPERS_H
