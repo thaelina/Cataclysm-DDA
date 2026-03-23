@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <memory>
@@ -34,9 +35,12 @@
 #include "item.h"
 #include "item_group.h"
 #include "item_location.h"
+#include "itype.h"
 #include "map.h"
 #include "map_helpers.h"
+#include "map_iterator.h"
 #include "map_scale_constants.h"
+#include "map_selector.h"
 #include "memory_fast.h"
 #include "messages.h"
 #include "monster.h"
@@ -56,6 +60,7 @@
 #include "translation.h"
 #include "type_id.h"
 #include "units.h"
+#include "value_ptr.h"
 #include "veh_type.h"
 #include "vehicle.h"
 #include "viewer.h"
@@ -78,6 +83,7 @@ static const item_group_id Item_spawn_data_test_NPC_guns( "test_NPC_guns" );
 
 static const itype_id itype_2x4( "2x4" );
 static const itype_id itype_M24( "M24" );
+static const itype_id itype_apron_leather( "apron_leather" );
 static const itype_id itype_backpack( "backpack" );
 static const itype_id itype_bat( "bat" );
 static const itype_id itype_debug_backpack( "debug_backpack" );
@@ -94,7 +100,12 @@ static const itype_id itype_sandwich_cheese_grilled( "sandwich_cheese_grilled" )
 static const itype_id itype_space_cake( "space_cake" );
 static const itype_id itype_sweater( "sweater" );
 
+static const ter_str_id ter_t_concrete_wall( "t_concrete_wall" );
 static const ter_str_id ter_t_floor( "t_floor" );
+static const ter_str_id ter_t_swater_sh( "t_swater_sh" );
+static const ter_str_id ter_t_wall_glass( "t_wall_glass" );
+static const ter_str_id ter_t_water_dispenser( "t_water_dispenser" );
+static const ter_str_id ter_t_water_sh( "t_water_sh" );
 
 static const trait_id trait_SAPROPHAGE( "SAPROPHAGE" );
 static const trait_id trait_SAPROVORE( "SAPROVORE" );
@@ -107,6 +118,7 @@ static const vproto_id vehicle_prototype_none( "none" );
 
 static const zone_type_id zone_type_CAMP_FOOD( "CAMP_FOOD" );
 static const zone_type_id zone_type_CAMP_STORAGE( "CAMP_STORAGE" );
+static const zone_type_id zone_type_NO_NPC_PICKUP( "NO_NPC_PICKUP" );
 
 static void on_load_test( npc &who, const time_duration &from, const time_duration &to )
 {
@@ -1303,5 +1315,632 @@ TEST_CASE( "npc_nonally_sleeps_when_tired", "[npc][needs]" )
 
         CHECK_FALSE( guy.has_effect( effect_sleep ) );
         CHECK_FALSE( guy.has_effect( effect_lying_down ) );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper-level tests for local resource acquisition
+// ---------------------------------------------------------------------------
+
+TEST_CASE( "npc_find_nearby_water_sources", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    set_time_to_day();
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "finds adjacent fresh shallow water" ) {
+        here.ter_set( adj, ter_t_water_sh );
+        std::vector<npc::scored_water_source> sources = guy.find_nearby_water_sources();
+        REQUIRE( !sources.empty() );
+        CHECK( sources[0].pos == adj );
+    }
+
+    SECTION( "ignores salt water" ) {
+        here.ter_set( adj, ter_t_swater_sh );
+        CHECK( guy.find_nearby_water_sources().empty() );
+    }
+
+    SECTION( "finds water within 6 tiles, returns exact position" ) {
+        tripoint_bub_ms water_at = guy.pos_bub() + tripoint( 5, 0, 0 );
+        here.ter_set( water_at, ter_t_water_sh );
+        std::vector<npc::scored_water_source> sources = guy.find_nearby_water_sources();
+        REQUIRE( !sources.empty() );
+        CHECK( sources[0].pos == water_at );
+    }
+
+    SECTION( "ignores water beyond 6 tiles" ) {
+        here.ter_set( guy.pos_bub() + tripoint( 7, 0, 0 ), ter_t_water_sh );
+        CHECK( guy.find_nearby_water_sources().empty() );
+    }
+
+    SECTION( "sorted by distance, closest first" ) {
+        tripoint_bub_ms near = guy.pos_bub() + tripoint::east;
+        tripoint_bub_ms far = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( far, ter_t_water_sh );
+        here.ter_set( near, ter_t_water_sh );
+        std::vector<npc::scored_water_source> sources = guy.find_nearby_water_sources();
+        REQUIRE( sources.size() >= 2 );
+        CHECK( sources[0].pos == near );
+        CHECK( sources[0].dist <= sources[1].dist );
+    }
+
+    SECTION( "ignores finite water sources" ) {
+        here.ter_set( adj, ter_t_water_dispenser );
+        CHECK( guy.find_nearby_water_sources().empty() );
+    }
+
+    SECTION( "ignores water behind walls (no LOS)" ) {
+        // Place water behind a wall -- NPC can't see it
+        tripoint_bub_ms wall_pos = guy.pos_bub() + tripoint::east;
+        tripoint_bub_ms water_behind = guy.pos_bub() + tripoint( 2, 0, 0 );
+        here.ter_set( wall_pos, ter_t_concrete_wall );
+        here.ter_set( water_behind, ter_t_water_sh );
+        here.build_map_cache( 0 );
+        REQUIRE_FALSE( guy.sees( here, water_behind ) );
+        CHECK( guy.find_nearby_water_sources().empty() );
+    }
+}
+
+TEST_CASE( "npc_drink_from_water_source", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.stomach.empty();
+    set_time_to_day();
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+    here.ter_set( adj, ter_t_water_sh );
+    std::vector<npc::scored_water_source> sources = guy.find_nearby_water_sources();
+    REQUIRE( !sources.empty() );
+    const tripoint_bub_ms water_pos = sources[0].pos;
+
+    SECTION( "drinking fills stomach, lowers thirst, no movement" ) {
+        guy.set_thirst( 200 );
+        const int thirst_before = guy.get_thirst();
+        const tripoint_bub_ms pos_before = guy.pos_bub();
+        const units::volume water_before = guy.stomach.get_water();
+        REQUIRE( guy.drink_from_water_source( water_pos ) );
+        CHECK( guy.stomach.get_water() > water_before );
+        CHECK( guy.get_thirst() < thirst_before );
+        CHECK( guy.pos_bub() == pos_before );
+    }
+
+    SECTION( "full stomach returns false, no water added" ) {
+        const units::volume room = guy.stomach.stomach_remaining( guy );
+        guy.stomach.ingest( { room, 0_ml, {} } );
+        const units::volume water_before = guy.stomach.get_water();
+        guy.set_thirst( 600 );
+        CHECK_FALSE( guy.drink_from_water_source( water_pos ) );
+        CHECK( guy.stomach.get_water() == water_before );
+    }
+
+    SECTION( "zero thirst returns false" ) {
+        guy.set_thirst( 0 );
+        CHECK_FALSE( guy.drink_from_water_source( water_pos ) );
+    }
+}
+
+TEST_CASE( "npc_find_nearby_food", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    get_player_character().camps.clear();
+    get_weather().forced_temperature = 20_C;
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_hunger( 300 );
+    guy.set_thirst( 100 );
+    guy.set_stored_kcal( 5000 );
+    set_time_to_day();
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+    REQUIRE_FALSE( guy.is_player_ally() );
+
+    SECTION( "finds food on adjacent tile, returns correct item" ) {
+        here.add_item_or_charges( adj, item( itype_sandwich_cheese_grilled ) );
+        std::vector<npc::scored_item> food = guy.find_nearby_food();
+        REQUIRE( !food.empty() );
+        CHECK( food[0].score > 0.0f );
+        CHECK( food[0].loc.get_item()->typeId() == itype_sandwich_cheese_grilled );
+        CHECK( food[0].loc.pos_bub( here ) == adj );
+    }
+
+    SECTION( "results sorted by descending score" ) {
+        // Two different foods; verify the list is sorted descending by score.
+        here.add_item_or_charges( adj, item( itype_honeycomb ) );
+        tripoint_bub_ms adj2 = guy.pos_bub() + point::west;
+        here.add_item_or_charges( adj2, item( itype_sandwich_cheese_grilled ) );
+        std::vector<npc::scored_item> food = guy.find_nearby_food();
+        REQUIRE( food.size() >= 2 );
+        CHECK( food[0].score >= food[1].score );
+    }
+
+    SECTION( "does not find food beyond 6 tiles" ) {
+        tripoint_bub_ms far = guy.pos_bub() + tripoint( 7, 0, 0 );
+        here.add_item_or_charges( far, item( itype_sandwich_cheese_grilled ) );
+        CHECK( guy.find_nearby_food().empty() );
+    }
+
+    SECTION( "ally without allow_pick_up returns empty" ) {
+        guy.set_fac( faction_your_followers );
+        guy.set_attitude( NPCATT_FOLLOW );
+        REQUIRE( guy.is_player_ally() );
+        guy.rules.clear_flag( ally_rule::allow_pick_up );
+        here.add_item_or_charges( adj, item( itype_sandwich_cheese_grilled ) );
+        CHECK( guy.find_nearby_food().empty() );
+    }
+
+    SECTION( "ally skips food in NO_NPC_PICKUP zone" ) {
+        guy.set_fac( faction_your_followers );
+        guy.set_attitude( NPCATT_FOLLOW );
+        REQUIRE( guy.is_player_ally() );
+        const tripoint_abs_ms abs_adj = here.get_abs( adj );
+        mapgen_place_zone( abs_adj, abs_adj, zone_type_NO_NPC_PICKUP,
+                           faction_your_followers, {}, "no_pickup" );
+        here.add_item_or_charges( adj, item( itype_sandwich_cheese_grilled ) );
+        CHECK( guy.find_nearby_food().empty() );
+    }
+
+    SECTION( "thirst-dominant filter skips dry food" ) {
+        guy.set_thirst( 400 );
+        guy.set_hunger( 50 );
+        item dry_food( itype_meat_cooked );
+        REQUIRE( dry_food.get_comestible() );
+        REQUIRE( dry_food.get_comestible()->quench <= 0 );
+        here.add_item_or_charges( adj, dry_food );
+        CHECK( guy.find_nearby_food().empty() );
+    }
+}
+
+TEST_CASE( "npc_find_nearby_warm_clothing", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+    map &here = get_map();
+    here.build_map_cache( 0 );
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+    REQUIRE_FALSE( guy.is_player_ally() );
+
+    SECTION( "finds sweater on adjacent tile, correct item and warmth score" ) {
+        here.add_item_or_charges( adj, item( itype_sweater ) );
+        std::vector<npc::scored_item> warm = guy.find_nearby_warm_clothing();
+        REQUIRE( !warm.empty() );
+        CHECK( warm[0].loc.get_item()->typeId() == itype_sweater );
+        CHECK( warm[0].loc.pos_bub( here ) == adj );
+        CHECK( warm[0].score == static_cast<float>( item( itype_sweater ).get_warmth() ) );
+    }
+
+    SECTION( "results sorted by descending warmth" ) {
+        here.add_item_or_charges( adj, item( itype_apron_leather ) );
+        tripoint_bub_ms adj2 = guy.pos_bub() + point::west;
+        here.add_item_or_charges( adj2, item( itype_sweater ) );
+        std::vector<npc::scored_item> warm = guy.find_nearby_warm_clothing();
+        REQUIRE( warm.size() >= 2 );
+        CHECK( warm[0].score >= warm[1].score );
+        CHECK( warm[0].loc.get_item()->typeId() == itype_sweater );
+    }
+
+    SECTION( "ally without allow_pick_up returns empty" ) {
+        guy.set_fac( faction_your_followers );
+        guy.set_attitude( NPCATT_FOLLOW );
+        REQUIRE( guy.is_player_ally() );
+        guy.rules.clear_flag( ally_rule::allow_pick_up );
+        here.add_item_or_charges( adj, item( itype_sweater ) );
+        CHECK( guy.find_nearby_warm_clothing().empty() );
+    }
+}
+
+TEST_CASE( "npc_move_to_and_verify", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    map &here = get_map();
+
+    SECTION( "moves toward passable target, distance decreases" ) {
+        tripoint_bub_ms target = guy.pos_bub() + tripoint( 3, 0, 0 );
+        REQUIRE( here.passable( target ) );
+        const int dist_before = rl_dist( guy.pos_bub(), target );
+        REQUIRE( guy.move_to_and_verify( target ) );
+        CHECK( rl_dist( guy.pos_bub(), target ) < dist_before );
+    }
+
+    SECTION( "impassable target: nearest_passable finds adjacent passable tile" ) {
+        tripoint_bub_ms target = guy.pos_bub() + tripoint( 3, 0, 0 );
+        here.ter_set( target, ter_t_wall_glass );
+        REQUIRE( here.impassable( target ) );
+        REQUIRE( here.passable( target + tripoint::west ) );
+        REQUIRE( guy.move_to_and_verify( target ) );
+        CHECK( guy.pos_bub() != target );
+        CHECK( here.passable( guy.pos_bub() ) );
+        CHECK( rl_dist( guy.pos_bub(), target ) < 3 );
+    }
+
+    SECTION( "unreachable target returns false, NPC stays" ) {
+        tripoint_bub_ms target = guy.pos_bub() + tripoint( 3, 0, 0 );
+        for( const tripoint_bub_ms &wall : here.points_in_radius( target, 1 ) ) {
+            if( wall != target ) {
+                here.ter_set( wall, ter_t_wall_glass );
+            }
+        }
+        REQUIRE( here.impassable( target + tripoint::west ) );
+        const tripoint_bub_ms before = guy.pos_bub();
+        CHECK_FALSE( guy.move_to_and_verify( target ) );
+        CHECK( guy.pos_bub() == before );
+    }
+}
+
+TEST_CASE( "npc_ownership_blocks_ground_food", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    get_weather().forced_temperature = 20_C;
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_hunger( 300 );
+    guy.set_thirst( 100 );
+    guy.set_stored_kcal( 5000 );
+    set_time_to_day();
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+    REQUIRE_FALSE( guy.is_player_ally() );
+    // Place player close enough to see NPC and adj tile
+    get_player_character().setpos( here, guy.pos_bub() + tripoint( 0, -2, 0 ) );
+    REQUIRE( get_player_view().sees( here, guy.pos_bub( here ) ) );
+    REQUIRE( get_player_view().sees( here, adj ) );
+
+    SECTION( "high-trust NPC skips player-owned food (caught stealing)" ) {
+        // stealing_threshold = 10 + 100/5 - 5 - 0 = 25 > 0
+        // would_always_steal = false; player sees NPC -> won't steal
+        guy.get_faction()->trusts_u = 100;
+        guy.personality.aggression = 5;
+        guy.personality.collector = 0;
+        item owned_food( itype_sandwich_cheese_grilled );
+        owned_food.set_owner( get_player_character() );
+        here.add_item_or_charges( adj, owned_food );
+        CHECK( guy.find_nearby_food().empty() );
+    }
+
+    SECTION( "aggressive NPC takes player-owned food (always steals)" ) {
+        // stealing_threshold = 10 + 0/5 - 20 - 0 = -10 < 0
+        // would_always_steal = true, ignores visibility
+        guy.get_faction()->trusts_u = 0;
+        guy.personality.aggression = 20;
+        guy.personality.collector = 0;
+        item owned_food( itype_sandwich_cheese_grilled );
+        owned_food.set_owner( get_player_character() );
+        here.add_item_or_charges( adj, owned_food );
+        std::vector<npc::scored_item> food = guy.find_nearby_food();
+        CHECK_FALSE( food.empty() );
+    }
+}
+
+TEST_CASE( "npc_consume_food_at_helper", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    get_weather().forced_temperature = 20_C;
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_hunger( 300 );
+    guy.set_stored_kcal( 5000 );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "consumes ground food, item removed from map" ) {
+        item &spawned = here.add_item_or_charges( adj, item( itype_sandwich_cheese_grilled ) );
+        const size_t count_before = here.i_at( adj ).size();
+        item_location loc( map_cursor( adj ), &spawned );
+        REQUIRE( guy.consume_food_at( loc ) );
+        CHECK( here.i_at( adj ).size() < count_before );
+    }
+
+    SECTION( "null item_location returns false" ) {
+        item_location empty;
+        CHECK_FALSE( guy.consume_food_at( empty ) );
+    }
+}
+
+TEST_CASE( "npc_wear_item_at_helper", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "wears ground sweater, item removed from map" ) {
+        item &spawned = here.add_item_or_charges( adj, item( itype_sweater ) );
+        const size_t count_before = here.i_at( adj ).size();
+        item_location loc( map_cursor( adj ), &spawned );
+        REQUIRE( guy.wear_item_at( loc ) );
+        CHECK( guy.is_wearing( itype_sweater ) );
+        CHECK( here.i_at( adj ).size() < count_before );
+    }
+
+    SECTION( "null item_location returns false" ) {
+        item_location empty;
+        CHECK_FALSE( guy.wear_item_at( empty ) );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests: address_needs with ground resources
+// ---------------------------------------------------------------------------
+
+TEST_CASE( "npc_address_needs_ground_water", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    get_player_character().camps.clear();
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.stomach.empty();
+    guy.guts.empty();
+    REQUIRE_FALSE( guy.is_player_ally() );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "extreme thirst: adjacent water consumed before danger gate" ) {
+        guy.set_thirst( 200 );
+        REQUIRE( guy.get_thirst() > 80 );
+        here.ter_set( adj, ter_t_water_sh );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( NPC_DANGER_VERY_LOW + 1 );
+
+        CHECK( guy.stomach.get_water() > 0_ml );
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "non-adjacent water: blocked by danger gate" ) {
+        guy.set_thirst( 200 );
+        tripoint_bub_ms water_at = guy.pos_bub() + tripoint( 3, 0, 0 );
+        here.ter_set( water_at, ter_t_water_sh );
+        REQUIRE( square_dist( guy.pos_bub(), water_at ) > 1 );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( NPC_DANGER_VERY_LOW + 1 );
+
+        CHECK( guy.stomach.get_water() == 0_ml );
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "non-adjacent water: NPC paths toward it (extreme thirst, low danger)" ) {
+        guy.set_thirst( 200 );
+        REQUIRE( guy.get_thirst() > 80 );
+        tripoint_bub_ms water_at = guy.pos_bub() + tripoint( 3, 0, 0 );
+        here.ter_set( water_at, ter_t_water_sh );
+        const int dist_before = rl_dist( guy.pos_bub(), water_at );
+
+        guy.address_needs( 0 );
+
+        CHECK( rl_dist( guy.pos_bub(), water_at ) < dist_before );
+    }
+
+    SECTION( "blocked nearest water skipped, reachable farther water reached" ) {
+        guy.set_thirst( 200 );
+        REQUIRE( guy.get_thirst() > 80 );
+        // Nearest water behind glass walls (unreachable)
+        tripoint_bub_ms blocked_at = guy.pos_bub() + tripoint( 2, 0, 0 );
+        for( const tripoint_bub_ms &w : here.points_in_radius( blocked_at, 1 ) ) {
+            if( w != blocked_at ) {
+                here.ter_set( w, ter_t_wall_glass );
+            }
+        }
+        here.ter_set( blocked_at, ter_t_water_sh );
+        // Farther water on open ground (reachable)
+        tripoint_bub_ms open_at = guy.pos_bub() + tripoint( 0, 3, 0 );
+        here.ter_set( open_at, ter_t_water_sh );
+        REQUIRE( here.passable( open_at ) );
+        const int dist_to_open = rl_dist( guy.pos_bub(), open_at );
+
+        guy.address_needs( 0 );
+
+        CHECK( rl_dist( guy.pos_bub(), open_at ) < dist_to_open );
+    }
+}
+
+TEST_CASE( "npc_address_needs_ground_food", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    get_player_character().camps.clear();
+    get_weather().forced_temperature = 20_C;
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.stomach.empty();
+    guy.guts.empty();
+    REQUIRE_FALSE( guy.is_player_ally() );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "extreme hunger: adjacent food consumed before danger gate" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_hunger( 300 );
+        guy.set_thirst( 100 );
+        here.add_item_or_charges( adj, item( itype_sandwich_cheese_grilled ) );
+        const size_t items_before = here.i_at( adj ).size();
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( NPC_DANGER_VERY_LOW + 1 );
+
+        CHECK( here.i_at( adj ).size() < items_before );
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "non-adjacent food: blocked by danger gate" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_hunger( 300 );
+        guy.set_thirst( 100 );
+        tripoint_bub_ms food_at = guy.pos_bub() + tripoint( 3, 0, 0 );
+        here.add_item_or_charges( food_at, item( itype_sandwich_cheese_grilled ) );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( NPC_DANGER_VERY_LOW + 1 );
+
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "non-adjacent food: NPC paths at low danger (extreme hunger)" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_hunger( 300 );
+        guy.set_thirst( 100 );
+        REQUIRE( guy.get_stored_kcal() + guy.stomach.get_calories() <
+                 guy.get_healthy_kcal() * 0.75 );
+        tripoint_bub_ms food_at = guy.pos_bub() + tripoint( 3, 0, 0 );
+        here.add_item_or_charges( food_at, item( itype_sandwich_cheese_grilled ) );
+        const int dist_before = rl_dist( guy.pos_bub(), food_at );
+
+        guy.address_needs( 0 );
+
+        CHECK( rl_dist( guy.pos_bub(), food_at ) < dist_before );
+    }
+
+    SECTION( "unreachable food: NPC does not stall" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_hunger( 300 );
+        guy.set_thirst( 100 );
+        tripoint_bub_ms food_at = guy.pos_bub() + tripoint( 3, 0, 0 );
+        for( const tripoint_bub_ms &w : here.points_in_radius( food_at, 1 ) ) {
+            if( w != food_at ) {
+                here.ter_set( w, ter_t_wall_glass );
+            }
+        }
+        here.add_item_or_charges( food_at, item( itype_sandwich_cheese_grilled ) );
+        REQUIRE( here.sees_some_items( food_at, guy ) );
+        REQUIRE( guy.sees( here, food_at ) );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( 0 );
+
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "blocked best candidate skipped, reachable second candidate reached" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_hunger( 300 );
+        guy.set_thirst( 100 );
+        // High-value food behind glass (unreachable)
+        tripoint_bub_ms blocked_at = guy.pos_bub() + tripoint( 3, 0, 0 );
+        for( const tripoint_bub_ms &w : here.points_in_radius( blocked_at, 1 ) ) {
+            if( w != blocked_at ) {
+                here.ter_set( w, ter_t_wall_glass );
+            }
+        }
+        here.add_item_or_charges( blocked_at, item( itype_sandwich_cheese_grilled ) );
+        REQUIRE( here.sees_some_items( blocked_at, guy ) );
+        REQUIRE( guy.sees( here, blocked_at ) );
+        // Low-value food on open ground (reachable)
+        tripoint_bub_ms open_at = guy.pos_bub() + tripoint( 0, 3, 0 );
+        REQUIRE( here.passable( open_at ) );
+        here.add_item_or_charges( open_at, item( itype_honeycomb ) );
+        const int dist_to_open = rl_dist( guy.pos_bub(), open_at );
+
+        guy.address_needs( 0 );
+
+        CHECK( rl_dist( guy.pos_bub(), open_at ) < dist_to_open );
+    }
+}
+
+TEST_CASE( "npc_address_needs_ground_clothing", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    get_player_character().camps.clear();
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.stomach.empty();
+    guy.guts.empty();
+    REQUIRE_FALSE( guy.is_player_ally() );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "freezing NPC wears adjacent sweater from ground" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+        here.add_item_or_charges( adj, item( itype_sweater ) );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( 0 );
+
+        CHECK( guy.is_wearing( itype_sweater ) );
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "adjacent sweater worn even during combat, no movement" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+        here.add_item_or_charges( adj, item( itype_sweater ) );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( NPC_DANGER_VERY_LOW + 1 );
+
+        CHECK( guy.is_wearing( itype_sweater ) );
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "non-adjacent sweater: blocked by danger gate" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        tripoint_bub_ms sweater_at = guy.pos_bub() + tripoint( 3, 0, 0 );
+        here.add_item_or_charges( sweater_at, item( itype_sweater ) );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( NPC_DANGER_VERY_LOW + 1 );
+
+        CHECK_FALSE( guy.is_wearing( itype_sweater ) );
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "non-adjacent sweater: NPC paths at low danger, distance decreases" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        tripoint_bub_ms sweater_at = guy.pos_bub() + tripoint( 3, 0, 0 );
+        here.add_item_or_charges( sweater_at, item( itype_sweater ) );
+        const int dist_before = rl_dist( guy.pos_bub(), sweater_at );
+        REQUIRE( dist_before > 1 );
+
+        guy.address_needs( 0 );
+
+        CHECK( rl_dist( guy.pos_bub(), sweater_at ) < dist_before );
+        CHECK_FALSE( guy.is_wearing( itype_sweater ) );
+    }
+
+    SECTION( "prefers inventory over ground" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+        guy.i_add( item( itype_sweater ) );
+        here.add_item_or_charges( adj, item( itype_sweater ) );
+        const size_t ground_before = here.i_at( adj ).size();
+
+        guy.address_needs( 0 );
+
+        CHECK( guy.is_wearing( itype_sweater ) );
+        CHECK( here.i_at( adj ).size() == ground_before );
     }
 }
