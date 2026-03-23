@@ -28,8 +28,18 @@
     },
     "end": {
       "effect": [
-        { "run_eocs": "EOC_bonuspulse" },
         { "math": [ "u_missionswon++" ] },
+        { "math": [ "totalbonus = rand(5) + 1" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
+          "u_message": "It's done.  You found the statue.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
+          "type": "mixed"
+        },
+        { "run_eocs": "EOC_bonuspulse" },
+        { "u_spawn_item": "warptoken", "count": { "global_val": "totalbonus", "default": 1 } },
         { "run_eocs": "EOC_innawood_bonus_exp_warpshards" }
       ]
     }
@@ -61,6 +71,10 @@
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 3 + total_difficulty_bonus" ] },
         {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
         },
@@ -90,6 +104,10 @@
       "effect": [
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 4 + total_difficulty_bonus" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
         {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
@@ -129,6 +147,10 @@
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 4 + total_difficulty_bonus" ] },
         {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
         },
@@ -166,6 +188,10 @@
       "effect": [
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 5 + total_difficulty_bonus" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
         {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
@@ -213,6 +239,10 @@
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 5 + total_difficulty_bonus" ] },
         {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
         },
@@ -259,6 +289,10 @@
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 8 + total_difficulty_bonus" ] },
         {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
         },
@@ -286,6 +320,10 @@
       "effect": [
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 10 + total_difficulty_bonus" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
         {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
@@ -316,6 +354,10 @@
       "effect": [
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 10 + total_difficulty_bonus" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
         {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
@@ -355,6 +397,10 @@
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 12 + total_difficulty_bonus" ] },
         {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
         },
@@ -393,6 +439,10 @@
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 12 + total_difficulty_bonus" ] },
         {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
         },
@@ -420,6 +470,10 @@
       "effect": [
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 9 + total_difficulty_bonus" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
         {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
@@ -452,6 +506,10 @@
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 12 + total_difficulty_bonus" ] },
         {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
         },
@@ -478,6 +536,10 @@
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 9 + total_difficulty_bonus" ] },
         {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
         },
@@ -503,6 +565,10 @@
       "effect": [
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 6 + total_difficulty_bonus" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
         {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
@@ -536,6 +602,10 @@
         { "math": [ "u_missionswon++" ] },
         { "math": [ "totalbonus = 12 + total_difficulty_bonus" ] },
         {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
           "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
           "type": "mixed"
         },
@@ -555,7 +625,21 @@
     "difficulty": 0,
     "value": 0,
     "invisible_on_complete": true,
-    "end": { "effect": [ { "math": [ "slaughterswon++" ] }, { "u_spawn_item": "warptoken", "count": 1 } ] }
+    "end": {
+      "effect": [
+        { "math": [ "slaughterswon++" ] },
+        { "math": [ "totalbonus = 1" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
+          "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
+          "type": "mixed"
+        },
+        { "u_spawn_item": "warptoken", "count": { "global_val": "totalbonus", "default": 1 } }
+      ]
+    }
   },
   {
     "id": "MISSION_BONUS_SLAUGHTER_ZED2",
@@ -568,7 +652,21 @@
     "difficulty": 0,
     "value": 0,
     "invisible_on_complete": true,
-    "end": { "effect": [ { "math": [ "slaughterswon++" ] }, { "u_spawn_item": "warptoken", "count": 3 } ] }
+    "end": {
+      "effect": [
+        { "math": [ "slaughterswon++" ] },
+        { "math": [ "totalbonus = 3" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
+          "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
+          "type": "mixed"
+        },
+        { "u_spawn_item": "warptoken", "count": { "global_val": "totalbonus", "default": 1 } }
+      ]
+    }
   },
   {
     "id": "MISSION_BONUS_SLAUGHTER_ZED3",
@@ -581,7 +679,21 @@
     "difficulty": 0,
     "value": 0,
     "invisible_on_complete": true,
-    "end": { "effect": [ { "math": [ "slaughterswon++" ] }, { "u_spawn_item": "warptoken", "count": 5 } ] }
+    "end": {
+      "effect": [
+        { "math": [ "slaughterswon++" ] },
+        { "math": [ "totalbonus = 5" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
+          "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
+          "type": "mixed"
+        },
+        { "u_spawn_item": "warptoken", "count": { "global_val": "totalbonus", "default": 1 } }
+      ]
+    }
   },
   {
     "id": "MISSION_BONUS_SLAUGHTER_MIGO",
@@ -594,7 +706,21 @@
     "difficulty": 0,
     "value": 0,
     "invisible_on_complete": true,
-    "end": { "effect": [ { "math": [ "slaughterswon++" ] }, { "u_spawn_item": "warptoken", "count": 3 } ] }
+    "end": {
+      "effect": [
+        { "math": [ "slaughterswon++" ] },
+        { "math": [ "totalbonus = 3" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
+          "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
+          "type": "mixed"
+        },
+        { "u_spawn_item": "warptoken", "count": { "global_val": "totalbonus", "default": 1 } }
+      ]
+    }
   },
   {
     "id": "MISSION_BONUS_SLAUGHTER_NETHER",
@@ -607,7 +733,21 @@
     "difficulty": 0,
     "value": 0,
     "invisible_on_complete": true,
-    "end": { "effect": [ { "math": [ "slaughterswon++" ] }, { "u_spawn_item": "warptoken", "count": 4 } ] }
+    "end": {
+      "effect": [
+        { "math": [ "slaughterswon++" ] },
+        { "math": [ "totalbonus = 4" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
+          "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
+          "type": "mixed"
+        },
+        { "u_spawn_item": "warptoken", "count": { "global_val": "totalbonus", "default": 1 } }
+      ]
+    }
   },
   {
     "id": "MISSION_BONUS_SLAUGHTER_BIRD",
@@ -620,7 +760,21 @@
     "difficulty": 0,
     "value": 0,
     "invisible_on_complete": true,
-    "end": { "effect": [ { "math": [ "slaughterswon++" ] }, { "u_spawn_item": "warptoken", "count": 1 } ] }
+    "end": {
+      "effect": [
+        { "math": [ "slaughterswon++" ] },
+        { "math": [ "totalbonus = 1" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
+          "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
+          "type": "mixed"
+        },
+        { "u_spawn_item": "warptoken", "count": { "global_val": "totalbonus", "default": 1 } }
+      ]
+    }
   },
   {
     "id": "MISSION_BONUS_SLAUGHTER_MAMMAL",
@@ -633,7 +787,21 @@
     "difficulty": 0,
     "value": 0,
     "invisible_on_complete": true,
-    "end": { "effect": [ { "math": [ "slaughterswon++" ] }, { "u_spawn_item": "warptoken", "count": 1 } ] }
+    "end": {
+      "effect": [
+        { "math": [ "slaughterswon++" ] },
+        { "math": [ "totalbonus = 1" ] },
+        {
+          "if": { "math": [ "challenge_mode_active == 1" ] },
+          "then": [ { "math": [ "totalbonus = totalbonus * challenge_mode_reward_multiplier" ] } ]
+        },
+        {
+          "u_message": "It's done.  They're all dead.  Warp shards filter in from seams in reality.  Your reward rains down on you.",
+          "type": "mixed"
+        },
+        { "u_spawn_item": "warptoken", "count": { "global_val": "totalbonus", "default": 1 } }
+      ]
+    }
   },
   {
     "type": "mapgen",
@@ -679,7 +847,7 @@
         "  x  "
       ],
       "terrain": { "x": [ "t_carpet_green" ], "o": [ "t_carpet_purple" ] },
-      "items": { "o": [ { "item": "warp_mission_goal", "chance": 100 } ] },
+      "furniture": { "o": "f_warpshardrewardstatue" },
       "flags": [ "ERASE_ALL_BEFORE_PLACING_TERRAIN" ]
     }
   }

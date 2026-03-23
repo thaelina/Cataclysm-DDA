@@ -258,6 +258,21 @@
         "effect": [ { "assign_mission": "SKYISLAND_UPGRADE_security5" } ],
         "topic": "SKYISLAND_UPGRADES_RAIDS"
       },
+      {
+        "text": "Challenge Mode",
+        "//": "Requires hardest missions unlocked, all bonus missions unlocked and at least stability 6 upgrade",
+        "condition": {
+          "and": [
+            { "not": { "u_has_mission": "SKYISLAND_UPGRADE_challenge_mode" } },
+            { "math": [ "bonusmissions >= 5" ] },
+            { "math": [ "hardestmissions > 0" ] },
+            { "math": [ "bonuspulses >= 6" ] },
+            { "math": [ "islandrank >= 4" ] }
+          ]
+        },
+        "effect": [ { "assign_mission": "SKYISLAND_UPGRADE_challenge_mode" } ],
+        "topic": "SKYISLAND_UPGRADES_RAIDS"
+      },
       { "text": "Nevermind.", "topic": "SKYISLAND_UPGRADE" }
     ]
   },
