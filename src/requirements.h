@@ -402,7 +402,7 @@ struct requirement_data {
 
     private:
         requirement_id id_ = requirement_id::NULL_ID(); // NOLINT(cata-serialize)
-        translation name_;
+        translation name_; // NOLINT(cata-serialize)
 
         bool blacklisted = false;
 

@@ -488,7 +488,9 @@ void requirement_data::load_requirement( const JsonObject &jsobj, const requirem
         jsobj.throw_error( "id was not specified for requirement" );
     }
 
-    if( jsobj.has_member( "name" ) ) {
+    // Only read display name from standalone requirement definitions,
+    // not from recipes/constructions that also pass through load_requirement.
+    if( id.is_null() && jsobj.has_member( "name" ) ) {
         jsobj.read( "name", req.name_ );
     }
 
