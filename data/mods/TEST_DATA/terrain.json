@@ -276,5 +276,23 @@
     "coverage": 60,
     "roof": "t_flat_roof",
     "flags": [ "BARRICADABLE_WINDOW" ]
+  },
+  {
+    "type": "terrain",
+    "id": "t_test_red_light",
+    "copy-from": "t_utility_light",
+    "name": "test red light",
+    "description": "Test terrain: utility light that emits red-colored light.",
+    "light_emitted": 10,
+    "light_color": [ 255, 0, 0 ]
+  },
+  {
+    "type": "terrain",
+    "id": "t_test_blue_light",
+    "copy-from": "t_utility_light",
+    "name": "test blue light",
+    "description": "Test terrain: utility light that emits blue-colored light.",
+    "light_emitted": 10,
+    "light_color": [ 0, 0, 255 ]
   }
 ]
