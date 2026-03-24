@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <map>
@@ -38,6 +39,7 @@
 #include "itype.h"
 #include "map.h"
 #include "map_helpers.h"
+#include "mapdata.h"
 #include "map_iterator.h"
 #include "map_scale_constants.h"
 #include "map_selector.h"
@@ -52,6 +54,7 @@
 #include "pathfinding.h"
 #include "pocket_type.h"
 #include "pimpl.h"
+#include "player_activity.h"
 #include "player_helpers.h"
 #include "point.h"
 #include "stomach.h"
@@ -70,6 +73,8 @@
 class Creature;
 enum npc_action : int;
 
+static const activity_id ACT_FORAGE( "ACT_FORAGE" );
+
 static const efftype_id effect_bouldering( "bouldering" );
 static const efftype_id effect_lying_down( "lying_down" );
 static const efftype_id effect_meth( "meth" );
@@ -86,6 +91,7 @@ static const itype_id itype_M24( "M24" );
 static const itype_id itype_apron_leather( "apron_leather" );
 static const itype_id itype_backpack( "backpack" );
 static const itype_id itype_bat( "bat" );
+static const itype_id itype_crackers( "crackers" );
 static const itype_id itype_debug_backpack( "debug_backpack" );
 static const itype_id itype_honeycomb( "honeycomb" );
 static const itype_id itype_leather_belt( "leather_belt" );
@@ -96,13 +102,18 @@ static const itype_id itype_meat( "meat" );
 static const itype_id itype_meat_cooked( "meat_cooked" );
 static const itype_id itype_meat_tainted( "meat_tainted" );
 static const itype_id itype_mutagen( "mutagen" );
+static const itype_id itype_orange( "orange" );
 static const itype_id itype_sandwich_cheese_grilled( "sandwich_cheese_grilled" );
 static const itype_id itype_space_cake( "space_cake" );
 static const itype_id itype_sweater( "sweater" );
+static const itype_id itype_water_clean( "water_clean" );
 
 static const ter_str_id ter_t_concrete_wall( "t_concrete_wall" );
 static const ter_str_id ter_t_floor( "t_floor" );
+static const ter_str_id ter_t_ponywall( "t_ponywall" );
 static const ter_str_id ter_t_swater_sh( "t_swater_sh" );
+static const ter_str_id ter_t_underbrush( "t_underbrush" );
+static const ter_str_id ter_t_wall( "t_wall" );
 static const ter_str_id ter_t_wall_glass( "t_wall_glass" );
 static const ter_str_id ter_t_water_dispenser( "t_water_dispenser" );
 static const ter_str_id ter_t_water_sh( "t_water_sh" );
@@ -111,10 +122,13 @@ static const trait_id trait_SAPROPHAGE( "SAPROPHAGE" );
 static const trait_id trait_SAPROVORE( "SAPROVORE" );
 static const trait_id trait_WEB_WEAVER( "WEB_WEAVER" );
 
+static const vpart_id vpart_cargo_lock( "cargo_lock" );
 static const vpart_id vpart_frame( "frame" );
 static const vpart_id vpart_seat( "seat" );
+static const vpart_id vpart_trunk_floor( "trunk_floor" );
 
 static const vproto_id vehicle_prototype_none( "none" );
+static const vproto_id vehicle_prototype_test_shopping_cart( "test_shopping_cart" );
 
 static const zone_type_id zone_type_CAMP_FOOD( "CAMP_FOOD" );
 static const zone_type_id zone_type_CAMP_STORAGE( "CAMP_STORAGE" );
@@ -1485,14 +1499,17 @@ TEST_CASE( "npc_find_nearby_food", "[npc][needs]" )
         CHECK( guy.find_nearby_food().empty() );
     }
 
-    SECTION( "thirst-dominant filter skips dry food" ) {
+    SECTION( "dry food found but scored lower when thirsty" ) {
+        // Thirst-dominant NPCs still find dry food (no hard filter).
+        // rate_food penalizes thirst-inducing items when thirsty,
+        // so hydrating food naturally ranks higher.
         guy.set_thirst( 400 );
         guy.set_hunger( 50 );
         item dry_food( itype_meat_cooked );
         REQUIRE( dry_food.get_comestible() );
         REQUIRE( dry_food.get_comestible()->quench <= 0 );
         here.add_item_or_charges( adj, dry_food );
-        CHECK( guy.find_nearby_food().empty() );
+        CHECK_FALSE( guy.find_nearby_food().empty() );
     }
 }
 
@@ -1943,4 +1960,571 @@ TEST_CASE( "npc_address_needs_ground_clothing", "[npc][needs]" )
         CHECK( guy.is_wearing( itype_sweater ) );
         CHECK( here.i_at( adj ).size() == ground_before );
     }
+}
+
+// === Stabilization fixes: thirst-dominant filter, quench floor, shelter, cargo, foraging ===
+
+TEST_CASE( "npc_thirst_dominant_filter_fallback", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    get_weather().forced_temperature = 20_C;
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "dry food found when only dry food available and thirst dominant" ) {
+        guy.set_thirst( 400 );
+        guy.set_hunger( 50 );
+        guy.set_stored_kcal( 5000 );
+        item dry( itype_crackers );
+        REQUIRE( dry.get_comestible() );
+        REQUIRE( dry.get_comestible()->quench <= 0 );
+        here.add_item_or_charges( adj, dry );
+
+        auto food = guy.find_nearby_food();
+
+        CHECK_FALSE( food.empty() );
+        if( !food.empty() ) {
+            CHECK( food[0].loc.get_item()->typeId() == itype_crackers );
+        }
+    }
+
+    SECTION( "hydrating food ranked above dry when both available" ) {
+        guy.set_thirst( 400 );
+        guy.set_hunger( 50 );
+        guy.set_stored_kcal( 5000 );
+        here.add_item_or_charges( adj, item( itype_sandwich_cheese_grilled ) );
+        const tripoint_bub_ms west = guy.pos_bub() + point::west;
+        here.add_item_or_charges( west, item( itype_crackers ) );
+
+        auto food = guy.find_nearby_food();
+
+        REQUIRE( food.size() >= 2 );
+        CHECK( food[0].loc.get_item()->typeId() == itype_sandwich_cheese_grilled );
+        // Dry food present as lower-priority fallback
+        bool has_dry = std::any_of( food.begin(), food.end(),
+        []( const npc::scored_item & si ) {
+            return si.loc.get_item()->typeId() == itype_crackers;
+        } );
+        CHECK( has_dry );
+    }
+}
+
+TEST_CASE( "npc_rate_food_quench_surplus_floor", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    get_weather().forced_temperature = 20_C;
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "calorie-positive hydrating food not killed by quench penalty" ) {
+        // NPC is not thirsty. Quench surplus penalty would normally make
+        // weight negative for fresh hydrating food (penalty = (1-rot)*quench).
+        // The floor keeps calorie-positive food available as a last resort.
+        guy.set_thirst( 0 );
+        guy.set_hunger( 300 );
+        guy.set_stored_kcal( 5000 );
+        item fruit( itype_orange );
+        REQUIRE( fruit.get_comestible() );
+        REQUIRE( fruit.get_comestible()->get_default_nutr() > 0 );
+        REQUIRE( fruit.get_comestible()->quench > 0 );
+        here.add_item_or_charges( adj, fruit );
+
+        auto food = guy.find_nearby_food();
+
+        REQUIRE_FALSE( food.empty() );
+        CHECK( food[0].loc.get_item()->typeId() == itype_orange );
+    }
+
+    SECTION( "zero-calorie drink still rejected by quench surplus" ) {
+        // The floor only applies to nutr > 0. A zero-calorie drink like
+        // clean water should still be filtered out when NPC isn't thirsty.
+        guy.set_thirst( 0 );
+        guy.set_hunger( 300 );
+        guy.set_stored_kcal( 5000 );
+        item water( itype_water_clean );
+        REQUIRE( water.get_comestible() );
+        REQUIRE( water.get_comestible()->get_default_nutr() <= 0 );
+        REQUIRE( water.get_comestible()->quench > 0 );
+        here.add_item_or_charges( adj, water );
+
+        auto food = guy.find_nearby_food();
+
+        CHECK( food.empty() );
+    }
+}
+
+TEST_CASE( "npc_find_nearby_shelters", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "finds adjacent indoor tile" ) {
+        here.ter_set( adj, ter_t_floor );
+        here.build_map_cache( 0 );
+        auto shelters = guy.find_nearby_shelters();
+        REQUIRE_FALSE( shelters.empty() );
+        CHECK( shelters[0].pos == adj );
+    }
+
+    SECTION( "finds indoor tile at distance 4" ) {
+        const tripoint_bub_ms far = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( far, ter_t_floor );
+        here.build_map_cache( 0 );
+        auto shelters = guy.find_nearby_shelters();
+        REQUIRE_FALSE( shelters.empty() );
+        CHECK( shelters[0].pos == far );
+    }
+
+    SECTION( "ignores indoor tile beyond 6" ) {
+        const tripoint_bub_ms too_far = guy.pos_bub() + tripoint( 7, 0, 0 );
+        here.ter_set( too_far, ter_t_floor );
+        here.build_map_cache( 0 );
+        CHECK( guy.find_nearby_shelters().empty() );
+    }
+
+    SECTION( "returns closest first when multiple" ) {
+        const tripoint_bub_ms near = guy.pos_bub() + point::east;
+        const tripoint_bub_ms far = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( far, ter_t_floor );
+        here.ter_set( near, ter_t_floor );
+        here.build_map_cache( 0 );
+        auto shelters = guy.find_nearby_shelters();
+        REQUIRE( shelters.size() >= 2 );
+        CHECK( shelters[0].dist <= shelters[1].dist );
+    }
+
+    SECTION( "ignores impassable indoor tile (pony wall)" ) {
+        here.ter_set( adj, ter_t_ponywall );
+        here.build_map_cache( 0 );
+        REQUIRE( here.has_flag( ter_furn_flag::TFLAG_INDOORS, adj ) );
+        REQUIRE( here.impassable( adj ) );
+        CHECK( guy.find_nearby_shelters().empty() );
+    }
+
+    SECTION( "already indoors returns empty" ) {
+        here.ter_set( guy.pos_bub(), ter_t_floor );
+        here.build_map_cache( 0 );
+        CHECK( guy.find_nearby_shelters().empty() );
+    }
+
+    SECTION( "ignores indoor tile occupied by creature" ) {
+        here.ter_set( adj, ter_t_floor );
+        here.build_map_cache( 0 );
+        spawn_test_monster( "mon_zombie", adj );
+        CHECK( guy.find_nearby_shelters().empty() );
+    }
+
+    SECTION( "no LOS: indoor tile behind opaque wall not found" ) {
+        here.ter_set( adj, ter_t_wall );
+        const tripoint_bub_ms behind = adj + point::east;
+        here.ter_set( behind, ter_t_floor );
+        here.build_map_cache( 0 );
+        CHECK( guy.find_nearby_shelters().empty() );
+    }
+}
+
+TEST_CASE( "npc_shelter_pathfinding", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    get_weather().forced_temperature = 20_C;
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+    map &here = get_map();
+
+    SECTION( "NPC paths toward indoor tile 4 away at low danger" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        const tripoint_bub_ms shelter = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( shelter, ter_t_floor );
+        here.build_map_cache( 0 );
+        const int dist_before = rl_dist( guy.pos_bub(), shelter );
+
+        guy.address_needs( 0 );
+
+        CHECK( rl_dist( guy.pos_bub(), shelter ) < dist_before );
+    }
+
+    SECTION( "shelter at 4 blocked by danger gate" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        const tripoint_bub_ms shelter = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( shelter, ter_t_floor );
+        here.build_map_cache( 0 );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( NPC_DANGER_VERY_LOW + 1 );
+
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "unreachable shelter: NPC stays put" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        // Shelter inside 2-tile-thick glass enclosure. Single-tile walls
+        // have diagonal gaps that A* can exploit; double-thick seals them.
+        const tripoint_bub_ms shelter = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( shelter, ter_t_floor );
+        for( int r = 1; r <= 2; ++r ) {
+            for( const tripoint_bub_ms &w : here.points_in_radius( shelter, r ) ) {
+                if( w != shelter && !here.has_flag( ter_furn_flag::TFLAG_INDOORS, w ) ) {
+                    here.ter_set( w, ter_t_wall_glass );
+                }
+            }
+        }
+        here.build_map_cache( 0 );
+        REQUIRE( guy.sees( here, shelter ) );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        CHECK_FALSE( guy.take_shelter_nearby() );
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "unreachable nearest shelter, falls through to reachable second" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        // Nearest shelter in double-thick glass enclosure (unreachable).
+        const tripoint_bub_ms near = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( near, ter_t_floor );
+        for( int r = 1; r <= 2; ++r ) {
+            for( const tripoint_bub_ms &w : here.points_in_radius( near, r ) ) {
+                if( w != near && !here.has_flag( ter_furn_flag::TFLAG_INDOORS, w ) ) {
+                    here.ter_set( w, ter_t_wall_glass );
+                }
+            }
+        }
+        // Second shelter reachable (open), opposite direction.
+        const tripoint_bub_ms far = guy.pos_bub() + tripoint( -3, 0, 0 );
+        here.ter_set( far, ter_t_floor );
+        here.build_map_cache( 0 );
+        const int dist_to_far = rl_dist( guy.pos_bub(), far );
+
+        CHECK( guy.take_shelter_nearby() );
+        CHECK( rl_dist( guy.pos_bub(), far ) < dist_to_far );
+    }
+
+    SECTION( "occupied nearest shelter skipped, next candidate used" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        const tripoint_bub_ms near = guy.pos_bub() + point::east;
+        here.ter_set( near, ter_t_floor );
+        spawn_test_monster( "mon_zombie", near );
+        const tripoint_bub_ms far = guy.pos_bub() + tripoint( 0, 3, 0 );
+        here.ter_set( far, ter_t_floor );
+        here.build_map_cache( 0 );
+        const int dist_to_far = rl_dist( guy.pos_bub(), far );
+
+        guy.address_needs( 0 );
+
+        CHECK( rl_dist( guy.pos_bub(), far ) < dist_to_far );
+    }
+}
+
+TEST_CASE( "npc_find_food_vehicle_cargo", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    get_weather().forced_temperature = 20_C;
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+    guy.set_hunger( 300 );
+    guy.set_stored_kcal( 5000 );
+
+    SECTION( "finds food in cargo-only tile (no ground items)" ) {
+        vehicle *cart = here.add_vehicle( vehicle_prototype_test_shopping_cart,
+                                          adj, 0_degrees, 0, 0 );
+        REQUIRE( cart != nullptr );
+        const std::optional<vpart_reference> cargo = here.veh_at( adj ).cargo();
+        REQUIRE( cargo.has_value() );
+        cargo->vehicle().add_item( here, cargo->part(), item( itype_sandwich_cheese_grilled ) );
+        REQUIRE( here.i_at( adj ).empty() );
+
+        auto food = guy.find_nearby_food();
+
+        REQUIRE_FALSE( food.empty() );
+        CHECK( food[0].loc.get_item()->typeId() == itype_sandwich_cheese_grilled );
+    }
+
+    SECTION( "adjacent cargo food consumed via address_needs (end-to-end)" ) {
+        guy.set_stored_kcal( 2000 );
+        vehicle *cart = here.add_vehicle( vehicle_prototype_test_shopping_cart,
+                                          adj, 0_degrees, 0, 0 );
+        REQUIRE( cart != nullptr );
+        const std::optional<vpart_reference> cargo = here.veh_at( adj ).cargo();
+        REQUIRE( cargo.has_value() );
+        cargo->vehicle().add_item( here, cargo->part(), item( itype_sandwich_cheese_grilled ) );
+        REQUIRE( here.i_at( adj ).empty() );
+        const size_t cargo_before = cargo->items().size();
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( 0 );
+
+        CHECK( cargo->items().size() < cargo_before );
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "cargo-locking blocks food discovery" ) {
+        // Build from empty prototype: frame + trunk_floor (LOCKABLE_CARGO) + cargo_lock.
+        vehicle *veh = here.add_vehicle( vehicle_prototype_none, adj, 0_degrees, 0, 0 );
+        REQUIRE( veh != nullptr );
+        const point_rel_ms origin( 0, 0 );
+        veh->install_part( here, origin, vpart_frame );
+        const int trunk_idx = veh->install_part( here, origin, vpart_trunk_floor );
+        REQUIRE( trunk_idx >= 0 );
+        const int lock_idx = veh->install_part( here, origin, vpart_cargo_lock );
+        REQUIRE( lock_idx >= 0 );
+        // Refresh vehicle caches after installing parts on empty prototype.
+        here.rebuild_vehicle_level_caches();
+        const tripoint_bub_ms cargo_pos = veh->bub_part_pos( here, trunk_idx );
+        const std::optional<vpart_reference> cargo = here.veh_at( cargo_pos ).cargo();
+        REQUIRE( cargo.has_value() );
+        REQUIRE( here.veh_at( cargo_pos ).part_with_feature( "CARGO_LOCKING", true ).has_value() );
+        cargo->vehicle().add_item( here, cargo->part(), item( itype_sandwich_cheese_grilled ) );
+
+        CHECK( guy.find_nearby_food().empty() );
+    }
+}
+
+TEST_CASE( "npc_find_clothing_vehicle_cargo", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    get_weather().forced_temperature = 20_C;
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "finds warm clothing in cargo-only tile" ) {
+        vehicle *cart = here.add_vehicle( vehicle_prototype_test_shopping_cart,
+                                          adj, 0_degrees, 0, 0 );
+        REQUIRE( cart != nullptr );
+        const std::optional<vpart_reference> cargo = here.veh_at( adj ).cargo();
+        REQUIRE( cargo.has_value() );
+        cargo->vehicle().add_item( here, cargo->part(), item( itype_sweater ) );
+        REQUIRE( here.i_at( adj ).empty() );
+
+        auto warm = guy.find_nearby_warm_clothing();
+
+        REQUIRE_FALSE( warm.empty() );
+        CHECK( warm[0].loc.get_item()->typeId() == itype_sweater );
+    }
+
+    SECTION( "adjacent cargo sweater worn via address_needs (end-to-end)" ) {
+        guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
+        vehicle *cart = here.add_vehicle( vehicle_prototype_test_shopping_cart,
+                                          adj, 0_degrees, 0, 0 );
+        REQUIRE( cart != nullptr );
+        const std::optional<vpart_reference> cargo = here.veh_at( adj ).cargo();
+        REQUIRE( cargo.has_value() );
+        cargo->vehicle().add_item( here, cargo->part(), item( itype_sweater ) );
+
+        guy.address_needs( 0 );
+
+        CHECK( guy.is_wearing( itype_sweater ) );
+    }
+
+    SECTION( "cargo-locking blocks clothing discovery" ) {
+        vehicle *veh = here.add_vehicle( vehicle_prototype_none, adj, 0_degrees, 0, 0 );
+        REQUIRE( veh != nullptr );
+        const point_rel_ms origin( 0, 0 );
+        veh->install_part( here, origin, vpart_frame );
+        const int trunk_idx = veh->install_part( here, origin, vpart_trunk_floor );
+        REQUIRE( trunk_idx >= 0 );
+        veh->install_part( here, origin, vpart_cargo_lock );
+        here.rebuild_vehicle_level_caches();
+        const tripoint_bub_ms cargo_pos = veh->bub_part_pos( here, trunk_idx );
+        const std::optional<vpart_reference> cargo = here.veh_at( cargo_pos ).cargo();
+        REQUIRE( cargo.has_value() );
+        REQUIRE( here.veh_at( cargo_pos ).part_with_feature( "CARGO_LOCKING", true ).has_value() );
+        cargo->vehicle().add_item( here, cargo->part(), item( itype_sweater ) );
+
+        CHECK( guy.find_nearby_warm_clothing().empty() );
+    }
+}
+
+TEST_CASE( "npc_find_nearby_harvestable", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "finds adjacent forageable underbrush" ) {
+        here.ter_set( adj, ter_t_underbrush );
+        here.build_map_cache( 0 );
+        // Underbrush uses examine_action, not the harvest system.
+        // find_nearby_harvestable detects both.
+        auto h = guy.find_nearby_harvestable();
+        REQUIRE_FALSE( h.empty() );
+        CHECK( h[0].pos == adj );
+    }
+
+    SECTION( "finds forageable terrain at distance 4" ) {
+        const tripoint_bub_ms far = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( far, ter_t_underbrush );
+        here.build_map_cache( 0 );
+        auto h = guy.find_nearby_harvestable();
+        REQUIRE_FALSE( h.empty() );
+        CHECK( h[0].pos == far );
+    }
+
+    SECTION( "ignores non-harvestable terrain" ) {
+        here.build_map_cache( 0 );
+        CHECK( guy.find_nearby_harvestable().empty() );
+    }
+
+    SECTION( "ignores forageable terrain beyond 6" ) {
+        here.ter_set( guy.pos_bub() + tripoint( 7, 0, 0 ), ter_t_underbrush );
+        here.build_map_cache( 0 );
+        CHECK( guy.find_nearby_harvestable().empty() );
+    }
+
+    SECTION( "returns closest first" ) {
+        here.ter_set( guy.pos_bub() + tripoint( 4, 0, 0 ), ter_t_underbrush );
+        here.ter_set( adj, ter_t_underbrush );
+        here.build_map_cache( 0 );
+        auto h = guy.find_nearby_harvestable();
+        REQUIRE( h.size() >= 2 );
+        CHECK( h[0].dist <= h[1].dist );
+    }
+
+    SECTION( "requires LOS" ) {
+        here.ter_set( adj, ter_t_wall );
+        here.ter_set( adj + point::east, ter_t_underbrush );
+        here.build_map_cache( 0 );
+        CHECK( guy.find_nearby_harvestable().empty() );
+    }
+}
+
+// Harvest scavenging is a last-resort fallback, not reliable food production.
+// is_harvestable() matches any non-empty harvest (underbrush, berry bushes,
+// fruit trees, but also trees that yield sticks/leaves). Actual food output
+// is seasonal RNG. Tests verify attempt-and-plumbing, not hunger relief.
+TEST_CASE( "npc_harvest_scavenging", "[npc][needs]" )
+{
+    clear_map_without_vision();
+    get_weather().forced_temperature = 20_C;
+    set_time_to_day();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.worn.wear_item( guy, item( itype_backpack ), false, false );
+    map &here = get_map();
+    const tripoint_bub_ms adj = guy.pos_bub() + point::east;
+
+    SECTION( "starving NPC adjacent to underbrush starts forage activity" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_thirst( 0 );
+        here.ter_set( adj, ter_t_underbrush );
+        here.build_map_cache( 0 );
+        REQUIRE_FALSE( guy.find_nearby_harvestable().empty() );
+        REQUIRE( guy.find_nearby_food().empty() );
+
+        guy.address_needs( 0 );
+
+        REQUIRE( guy.has_activity() );
+        CHECK( guy.activity.id() == ACT_FORAGE );
+        CHECK( guy.activity.placement == here.get_abs( adj ) );
+    }
+
+    // NOTE: Normal-hunger path also wires scavenging as fallback (after the
+    // one_in(3) gate in address_needs), but that gate is non-deterministic.
+    // No test for normal-path scavenging until we have a clean deterministic
+    // seam. Extreme-hunger path is deterministic and fully covered here.
+
+    SECTION( "NPC paths toward distant harvestable when starving" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_thirst( 0 );
+        const tripoint_bub_ms bush = guy.pos_bub() + tripoint( 3, 0, 0 );
+        here.ter_set( bush, ter_t_underbrush );
+        here.build_map_cache( 0 );
+        const int dist_before = rl_dist( guy.pos_bub(), bush );
+
+        guy.address_needs( 0 );
+
+        CHECK( rl_dist( guy.pos_bub(), bush ) < dist_before );
+    }
+
+    SECTION( "scavenging blocked by danger gate" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_thirst( 0 );
+        here.ter_set( adj, ter_t_underbrush );
+        here.build_map_cache( 0 );
+        const tripoint_bub_ms before = guy.pos_bub();
+
+        guy.address_needs( NPC_DANGER_VERY_LOW + 1 );
+
+        CHECK_FALSE( guy.has_activity() );
+        CHECK( guy.pos_bub() == before );
+    }
+
+    SECTION( "ground food preferred over scavenging" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_thirst( 0 );
+        here.add_item_or_charges( adj, item( itype_sandwich_cheese_grilled ) );
+        const tripoint_bub_ms west = guy.pos_bub() + point::west;
+        here.ter_set( west, ter_t_underbrush );
+        here.build_map_cache( 0 );
+        const size_t items_before = here.i_at( adj ).size();
+
+        guy.address_needs( 0 );
+
+        CHECK( here.i_at( adj ).size() < items_before );
+        CHECK_FALSE( guy.has_activity() );
+    }
+
+    SECTION( "distant reachable food preferred over nearby harvestable" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_thirst( 0 );
+        const tripoint_bub_ms food_at = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.add_item_or_charges( food_at, item( itype_sandwich_cheese_grilled ) );
+        here.ter_set( adj, ter_t_underbrush );
+        here.build_map_cache( 0 );
+        const int dist_to_food = rl_dist( guy.pos_bub(), food_at );
+
+        guy.address_needs( 0 );
+
+        CHECK( rl_dist( guy.pos_bub(), food_at ) < dist_to_food );
+        CHECK_FALSE( guy.has_activity() );
+    }
+
+    SECTION( "cargo food preferred over scavenging" ) {
+        guy.set_stored_kcal( 2000 );
+        guy.set_thirst( 0 );
+        vehicle *cart = here.add_vehicle( vehicle_prototype_test_shopping_cart,
+                                          adj, 0_degrees, 0, 0 );
+        REQUIRE( cart != nullptr );
+        const std::optional<vpart_reference> cargo = here.veh_at( adj ).cargo();
+        REQUIRE( cargo.has_value() );
+        cargo->vehicle().add_item( here, cargo->part(), item( itype_sandwich_cheese_grilled ) );
+        const size_t cargo_before = cargo->items().size();
+        const tripoint_bub_ms west = guy.pos_bub() + point::west;
+        here.ter_set( west, ter_t_underbrush );
+        here.build_map_cache( 0 );
+
+        guy.address_needs( 0 );
+
+        CHECK_FALSE( guy.has_activity() );
+        CHECK( cargo->items().size() < cargo_before );
+    }
+
+    // Forage activity completion (terrain transform, item spawn) belongs in the
+    // activity test seam, not the NPC needs suite. The NPC activity-resume
+    // backlog triggers ACT_NULL when driving do_turn() directly in tests.
+    // Completion coverage for forage_activity_actor should go in
+    // player_activities_test.cpp or harvest_test.cpp.
 }

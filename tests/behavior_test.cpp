@@ -60,6 +60,7 @@ static const string_id<behavior::node_t> behavior_node_t_npc_needs( "npc_needs" 
 
 static const ter_str_id ter_t_floor( "t_floor" );
 static const ter_str_id ter_t_ponywall( "t_ponywall" );
+static const ter_str_id ter_t_wall( "t_wall" );
 
 namespace behavior
 {
@@ -429,6 +430,38 @@ TEST_CASE( "check_npc_behavior_tree", "[npc][behavior]" )
     SECTION( "can_take_shelter already indoors" ) {
         map &here = get_map();
         here.ter_set( test_npc.pos_bub(), ter_t_floor );
+        CHECK( oracle.can_take_shelter( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "can_take_shelter detects indoor tile beyond adjacent" ) {
+        map &here = get_map();
+        // Distance 2 only: earlier sections in this TEST_CASE mutate global
+        // weather (temperature -> 0F) without cleanup, reducing NPC vision
+        // range via stale weather state. Radius-4+ detection is covered by
+        // npc_find_nearby_shelters in npc_test.cpp which has a clean fixture.
+        const tripoint_bub_ms shelter = test_npc.pos_bub() + tripoint( 2, 0, 0 );
+        here.ter_set( shelter, ter_t_floor );
+        here.invalidate_map_cache( 0 );
+        here.build_map_cache( 0, true );
+        REQUIRE( here.has_flag( ter_furn_flag::TFLAG_INDOORS, shelter ) );
+        REQUIRE( here.passable( shelter ) );
+        REQUIRE( test_npc.sees( here, shelter ) );
+        CHECK( oracle.can_take_shelter( "" ) == behavior::status_t::running );
+    }
+    SECTION( "can_take_shelter fails beyond 6" ) {
+        map &here = get_map();
+        here.ter_set( test_npc.pos_bub() + tripoint( 7, 0, 0 ), ter_t_floor );
+        here.invalidate_map_cache( 0 );
+        here.build_map_cache( 0, true );
+        CHECK( oracle.can_take_shelter( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "can_take_shelter fails without LOS" ) {
+        map &here = get_map();
+        tripoint_bub_ms wall_pos = test_npc.pos_bub() + point::east;
+        tripoint_bub_ms shelter = wall_pos + point::east;
+        here.ter_set( wall_pos, ter_t_wall );
+        here.ter_set( shelter, ter_t_floor );
+        here.invalidate_map_cache( 0 );
+        here.build_map_cache( 0, true );
         CHECK( oracle.can_take_shelter( "" ) == behavior::status_t::failure );
     }
     SECTION( "Freezing outdoors next to building" ) {
