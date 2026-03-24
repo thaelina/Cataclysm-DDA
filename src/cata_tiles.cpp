@@ -2995,16 +2995,17 @@ bool cata_tiles::draw_from_id_string_internal( const std::string &id, TILE_CATEG
     }
 
     //draw it!
-    draw_tile_at( display_tile, screen_pos, loc_rand, rota, ll,
-                  nv_color_active, retract, height_3d, offset );
+    const tile_render_params rp{ ll, nv_color_active };
+    draw_tile_at( display_tile, screen_pos, loc_rand, rota, rp,
+                  retract, height_3d, offset );
 
     return true;
 }
 
 bool cata_tiles::draw_sprite_at(
     const tile_type &tile, const weighted_int_list<std::vector<int>> &svlist,
-    const point &p, unsigned int loc_rand, bool rota_fg, int rota, lit_level ll,
-    bool apply_night_vision_goggles, int retract, int &height_3d, const point &offset )
+    const point &p, unsigned int loc_rand, bool rota_fg, int rota,
+    const tile_render_params &rp, int retract, int &height_3d, const point &offset )
 {
     const std::vector<int> *picked = svlist.pick( loc_rand );
     if( !picked ) {
@@ -3041,12 +3042,12 @@ bool cata_tiles::draw_sprite_at(
 
     //use night vision colors when in use
     //then use low light tile if available
-    if( ll == lit_level::MEMORIZED ) {
+    if( rp.ll == lit_level::MEMORIZED ) {
         if( const texture *ptr = tileset_ptr->get_memory_tile( sprite_index ) ) {
             sprite_tex = ptr;
         }
-    } else if( apply_night_vision_goggles ) {
-        if( ll != lit_level::LOW ) {
+    } else if( rp.use_night_vision_tiles ) {
+        if( rp.ll != lit_level::LOW ) {
             if( const texture *ptr = tileset_ptr->get_overexposed_tile( sprite_index ) ) {
                 sprite_tex = ptr;
             }
@@ -3055,7 +3056,7 @@ bool cata_tiles::draw_sprite_at(
                 sprite_tex = ptr;
             }
         }
-    } else if( ll == lit_level::LOW ) {
+    } else if( rp.ll == lit_level::LOW ) {
         if( const texture *ptr = tileset_ptr->get_shadow_tile( sprite_index ) ) {
             sprite_tex = ptr;
         }
@@ -3160,14 +3161,14 @@ bool cata_tiles::draw_sprite_at(
 
 bool cata_tiles::draw_tile_at(
     const tile_type &tile, const point &p, unsigned int loc_rand, int rota,
-    lit_level ll, bool apply_night_vision_goggles, int retract, int &height_3d,
+    const tile_render_params &rp, int retract, int &height_3d,
     const point &offset )
 {
     int fake_int = height_3d;
-    draw_sprite_at( tile, tile.bg, p, loc_rand, /*fg:*/ false, rota, ll,
-                    apply_night_vision_goggles, retract, fake_int, offset );
-    draw_sprite_at( tile, tile.fg, p, loc_rand, /*fg:*/ true, rota, ll,
-                    apply_night_vision_goggles, retract, height_3d, offset );
+    draw_sprite_at( tile, tile.bg, p, loc_rand, /*fg:*/ false, rota, rp,
+                    retract, fake_int, offset );
+    draw_sprite_at( tile, tile.fg, p, loc_rand, /*fg:*/ true, rota, rp,
+                    retract, height_3d, offset );
     return true;
 }
 
