@@ -171,7 +171,7 @@
     "id": "EOC_return_OM_teleport",
     "//": "This is the EOC which actually returns you home.  It brings you home and removes all warp-related effects including warp sickness.  It heals you enough to fix broken limbs.  It also resets the awayfromhome counter to 0 so warp sickness can be tracked properly next time you're out.",
     "effect": [
-      { "run_eocs": "EOC_CANCEL_PORTAL_STORM" },
+      { "run_eocs": [ "EOC_CANCEL_PORTAL_STORM", "EOC_raid_challenge_mode_post_raid" ] },
       {
         "u_run_npc_eocs": [
           {
@@ -268,6 +268,10 @@
     "effect": [
       { "math": [ "gettokens = 0" ] },
       { "math": [ "owed_material_tokens = lengthofthisraid * 75 + 50" ] },
+      {
+        "if": { "math": [ "challenge_mode_active == 1" ] },
+        "then": [ { "math": [ "owed_material_tokens = owed_material_tokens * challenge_mode_reward_multiplier" ] } ]
+      },
       {
         "u_message": "You've returned home safely using a designated exit point.  You have earned <global_val:owed_material_tokens> material tokens for your success.",
         "popup": true

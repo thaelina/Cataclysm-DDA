@@ -4,14 +4,26 @@
     "id": "EOC_warp_statue",
     "effect": [
       {
-        "run_eoc_selector": [ "EOC_raidbegin_short", "EOC_raidbegin_medium", "EOC_raidbegin_long", "EOC_raidcancel" ],
-        "names": [ "Quick Expedition", "Large Expedition", "Extended Expedition", "Cancel" ],
-        "keys": [ "1", "2", "3", "4" ],
-        "title": "Select Expedition Length",
+        "if": { "math": [ "challenge_mode_active == 1" ] },
+        "then": [ { "set_string_var": "<color_red>Enabled</color>", "target_var": { "global_val": "challenge_mode_warning" } } ],
+        "else": [ { "set_string_var": "Disabled", "target_var": { "global_val": "challenge_mode_warning" } } ]
+      },
+      {
+        "run_eoc_selector": [
+          "EOC_raidbegin_short",
+          "EOC_raidbegin_medium",
+          "EOC_raidbegin_long",
+          "EOC_raid_toggle_challenge_mode",
+          "EOC_raidcancel"
+        ],
+        "names": [ "Quick Expedition", "Large Expedition", "Extended Expedition", "Toggle Challenge Mode", "Cancel" ],
+        "keys": [ "1", "2", "3", "4", "5" ],
+        "title": "Select Expedition Length.  Challenge Mode: <global_val:challenge_mode_warning>",
         "descriptions": [
           "A simple, brief expedition at the normal time limit.  Missions and exits will be close together.  A good chance to quickly gather supplies and experience.",
           "A longer expedition that offers twice the time.  Missions and exits will be scattered over a wider area.  You will have more opportunity to dig deeper into surrounding points of interest, but also need more time to travel.  Missions offer extra warp shards as rewards.",
           "A very long expedition that triples the time limit.  Missions and exits will be very far away.  You will have time for extended activities, but a good deal of your time will be spent trying to reach objectives over potentially dangerous terrain.  Missions offer even more warp shards as rewards.",
+          "Toggles Challenge Mode, granting more rewards at the cost of harder expeditions.  A random difficulty modifier will be applied.",
           "Stay on the island for now."
         ]
       }
@@ -59,6 +71,19 @@
       { "math": [ "exfildistancemax = 160" ] },
       { "math": [ "exfildistancemin = 50" ] },
       { "run_eocs": [ "EOC_warp_choose_locale" ] }
+    ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_raid_toggle_challenge_mode",
+    "condition": { "math": [ "challenge_mode_available > 0" ] },
+    "effect": [
+      {
+        "if": { "math": [ "challenge_mode_active == 1" ] },
+        "then": [ { "math": [ "challenge_mode_active = 0" ] }, { "u_message": "Challenge Mode has been deactivated.", "popup": true } ],
+        "else": [ { "math": [ "challenge_mode_active = 1" ] }, { "u_message": "Challenge Mode has been activated.", "popup": true } ]
+      },
+      { "run_eocs": [ "EOC_warp_statue" ] }
     ]
   },
   {
@@ -312,6 +337,7 @@
     "type": "effect_on_condition",
     "id": "EOC_SKY_ISLAND_MISSION_DIMENSION_SHIFT",
     "effect": [
+      { "run_eocs": [ "EOC_raid_challenge_mode_pre_raid" ] },
       { "u_location_variable": { "global_val": "OM_HQ_origin" } },
       {
         "u_location_variable": { "global_val": "OM_HQ_origin_npc" },
@@ -361,7 +387,7 @@
       {
         "u_travel_to_dimension": "dimension_sky_island_mission",
         "npc_travel_radius": 10,
-        "region_type": "dimension_sky_island_region"
+        "region_type": { "global_val": "sky_island_target_region_settings" }
       }
     ]
   }
