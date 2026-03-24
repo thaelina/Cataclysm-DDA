@@ -1,6 +1,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -13,10 +14,14 @@
 #include "bodypart.h"
 #include "calendar.h"
 #include "cata_catch.h"
+#include "character.h"
 #include "character_attire.h"
 #include "character_oracle.h"
 #include "coordinates.h"
+#include "creature.h"
+#include "npc_decision_category.h"
 #include "flexbuffer_json.h"
+#include "game.h"
 #include "item.h"
 #include "json_loader.h"
 #include "item_group.h"
@@ -35,12 +40,16 @@
 #include "player_helpers.h"
 #include "pocket_type.h"
 #include "point.h"
+#include "sounds.h"
 #include "type_id.h"
 #include "units.h"
 #include "weather.h"
 #include "weighted_list.h"
 
 static const efftype_id effect_meth( "meth" );
+static const efftype_id effect_npc_run_away( "npc_run_away" );
+
+static const faction_id faction_your_followers( "your_followers" );
 
 static const item_group_id Item_spawn_data_test_bottle_water( "test_bottle_water" );
 
@@ -54,13 +63,18 @@ static const itype_id itype_sandwich_cheese_grilled( "sandwich_cheese_grilled" )
 static const itype_id itype_sweater( "sweater" );
 static const itype_id itype_water_clean( "water_clean" );
 
+static const mtype_id mon_zombie( "mon_zombie" );
+
 static const nested_mapgen_id nested_mapgen_test_seedling( "test_seedling" );
 
+static const string_id<behavior::node_t> behavior_node_t_npc_decision( "npc_decision" );
 static const string_id<behavior::node_t> behavior_node_t_npc_needs( "npc_needs" );
 
 static const ter_str_id ter_t_floor( "t_floor" );
 static const ter_str_id ter_t_ponywall( "t_ponywall" );
 static const ter_str_id ter_t_wall( "t_wall" );
+
+static const trait_id trait_IGNORE_SOUND( "IGNORE_SOUND" );
 
 namespace behavior
 {
@@ -899,4 +913,302 @@ TEST_CASE( "npc_urgency_score_predicates", "[npc][behavior]" )
     SECTION( "predicates registered in predicate_map" ) {
         CHECK( behavior::predicate_map.count( "npc_needs_sleep_badly" ) == 1 );
     }
+}
+
+TEST_CASE( "npc_decision_combat_predicates", "[npc][behavior]" )
+{
+    clear_map();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy );
+    // Allied faction ensures assess_danger considers zombies as threats,
+    // matching npc_attack_test setup.
+    guy.set_fac( faction_your_followers );
+    behavior::character_oracle_t oracle( &guy );
+
+    SECTION( "in_danger running with hostile creature nearby" ) {
+        map &here = get_map();
+        // Player underground so they don't interfere with NPC threat assessment
+        get_player_character().setpos( here, guy.pos_bub() + tripoint( 0, 0, -2 ) );
+        monster *zed = g->place_critter_at( mon_zombie,
+                                            guy.pos_bub() + point::east );
+        REQUIRE( zed != nullptr );
+        REQUIRE( zed->attitude_to( guy ) == Creature::Attitude::HOSTILE );
+        guy.recalc_sight_limits();
+        REQUIRE( guy.sees( here, *zed ) );
+        guy.regen_ai_cache();
+        REQUIRE( guy.get_ai_danger() > 0 );
+        CHECK( oracle.in_danger( "" ) == behavior::status_t::running );
+    }
+    SECTION( "in_danger failure when no danger" ) {
+        guy.recalc_sight_limits();
+        guy.regen_ai_cache();
+        CHECK( oracle.in_danger( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "should_flee running with run_away effect" ) {
+        guy.add_effect( effect_npc_run_away, 10_turns );
+        CHECK( oracle.should_flee( "" ) == behavior::status_t::running );
+    }
+    SECTION( "should_flee running with FLEE_TEMP attitude" ) {
+        guy.set_attitude( NPCATT_FLEE_TEMP );
+        CHECK( oracle.should_flee( "" ) == behavior::status_t::running );
+    }
+    SECTION( "should_flee failure without effect or attitude" ) {
+        CHECK( oracle.should_flee( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "has_target running with hostile creature" ) {
+        map &here = get_map();
+        get_player_character().setpos( here, guy.pos_bub() + tripoint( 0, 0, -2 ) );
+        monster *zed = g->place_critter_at( mon_zombie,
+                                            guy.pos_bub() + point::east );
+        REQUIRE( zed != nullptr );
+        guy.recalc_sight_limits();
+        REQUIRE( guy.sees( here, *zed ) );
+        guy.regen_ai_cache();
+        REQUIRE( guy.get_ai_danger() > 0 );
+        CHECK( oracle.has_target( "" ) == behavior::status_t::running );
+    }
+    SECTION( "has_target failure when no target" ) {
+        guy.recalc_sight_limits();
+        guy.regen_ai_cache();
+        CHECK( oracle.has_target( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "has_sound_alerts failure when quiet" ) {
+        CHECK( oracle.has_sound_alerts( "" ) == behavior::status_t::failure );
+    }
+}
+
+TEST_CASE( "npc_decision_sound_alert_predicates", "[npc][behavior]" )
+{
+    clear_map();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy );
+    behavior::character_oracle_t oracle( &guy );
+
+    SECTION( "has_sound_alerts running when alerts present" ) {
+        guy.push_ai_sound_alert( guy.pos_abs() + tripoint( 10, 0, 0 ),
+                                 sounds::sound_t::combat, 20 );
+        CHECK( oracle.has_sound_alerts( "" ) == behavior::status_t::running );
+    }
+    SECTION( "has_sound_alerts suppressed for walking companion" ) {
+        guy.set_attitude( NPCATT_FOLLOW );
+        REQUIRE( guy.is_walking_with() );
+        guy.push_ai_sound_alert( guy.pos_abs() + tripoint( 10, 0, 0 ),
+                                 sounds::sound_t::combat, 20 );
+        CHECK( oracle.has_sound_alerts( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "has_sound_alerts suppressed for IGNORE_SOUND trait" ) {
+        guy.set_mutation( trait_IGNORE_SOUND );
+        REQUIRE( guy.has_trait( trait_IGNORE_SOUND ) );
+        guy.push_ai_sound_alert( guy.pos_abs() + tripoint( 10, 0, 0 ),
+                                 sounds::sound_t::combat, 20 );
+        CHECK( oracle.has_sound_alerts( "" ) == behavior::status_t::failure );
+    }
+}
+
+TEST_CASE( "npc_decision_duty_predicates", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy );
+    behavior::character_oracle_t oracle( &guy );
+
+    SECTION( "displaced running when guard_pos set elsewhere" ) {
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 10, 0, 0 ) );
+        CHECK( oracle.displaced_from_post( "" ) == behavior::status_t::running );
+    }
+    SECTION( "displaced failure when no guard_pos" ) {
+        CHECK( oracle.displaced_from_post( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "displaced failure when at guard_pos" ) {
+        guy.set_guard_pos( guy.pos_abs() );
+        CHECK( oracle.displaced_from_post( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "displaced detects persistent guard_pos from mission" ) {
+        // Refugee Center guards have npc::guard_pos set by dialogue,
+        // not ai_cache.guard_pos. The predicate must check both.
+        guy.guard_pos = guy.pos_abs() + tripoint( 10, 0, 0 );
+        CHECK( oracle.displaced_from_post( "" ) == behavior::status_t::running );
+    }
+    SECTION( "duty_urgency zero without post" ) {
+        CHECK( oracle.duty_urgency( "" ) == Approx( 0.0f ) );
+    }
+    SECTION( "duty_urgency nonzero when displaced" ) {
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 5, 0, 0 ) );
+        CHECK( oracle.duty_urgency( "" ) > 0.0f );
+    }
+}
+
+TEST_CASE( "npc_decision_tree_priorities", "[npc][behavior]" )
+{
+    clear_map();
+    behavior::tree npc_decision;
+    npc_decision.add( &behavior_node_t_npc_decision.obj() );
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy );
+    guy.set_fac( faction_your_followers );
+    behavior::character_oracle_t oracle( &guy );
+
+    SECTION( "combat beats any need" ) {
+        map &here = get_map();
+        get_player_character().setpos( here, guy.pos_bub() + tripoint( 0, 0, -2 ) );
+        monster *zed = g->place_critter_at( mon_zombie,
+                                            guy.pos_bub() + point::east );
+        REQUIRE( zed != nullptr );
+        guy.recalc_sight_limits();
+        guy.regen_ai_cache();
+        REQUIRE( guy.get_ai_danger() > 0 );
+        guy.set_stored_kcal( 1000 );
+        guy.set_hunger( 500 );
+        guy.i_add( item( itype_sandwich_cheese_grilled ) );
+        REQUIRE( oracle.needs_food_badly( "" ) == behavior::status_t::running );
+        CHECK( npc_decision.tick( &oracle ) == "fight" );
+    }
+    SECTION( "flee beats fight" ) {
+        map &here = get_map();
+        get_player_character().setpos( here, guy.pos_bub() + tripoint( 0, 0, -2 ) );
+        monster *zed = g->place_critter_at( mon_zombie,
+                                            guy.pos_bub() + point::east );
+        REQUIRE( zed != nullptr );
+        guy.recalc_sight_limits();
+        guy.regen_ai_cache();
+        REQUIRE( guy.get_ai_danger() > 0 );
+        guy.add_effect( effect_npc_run_away, 10_turns );
+        CHECK( npc_decision.tick( &oracle ) == "flee" );
+    }
+    SECTION( "investigation beats needs" ) {
+        guy.push_ai_sound_alert( guy.pos_abs() + tripoint( 10, 0, 0 ),
+                                 sounds::sound_t::combat, 20 );
+        REQUIRE( oracle.has_sound_alerts( "" ) == behavior::status_t::running );
+        guy.set_stored_kcal( 1000 );
+        guy.set_hunger( 500 );
+        guy.i_add( item( itype_sandwich_cheese_grilled ) );
+        REQUIRE( oracle.needs_food_badly( "" ) == behavior::status_t::running );
+        CHECK( npc_decision.tick( &oracle ) == "investigate_sound" );
+    }
+    SECTION( "feasible extreme need beats duty" ) {
+        guy.set_thirst( 1000 );
+        const item_group::ItemList water = item_group::items_from(
+                                               Item_spawn_data_test_bottle_water );
+        guy.i_add( water.front() );
+        REQUIRE( oracle.needs_water_badly( "" ) == behavior::status_t::running );
+        REQUIRE( oracle.has_water( "" ) == behavior::status_t::running );
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 10, 0, 0 ) );
+        REQUIRE( oracle.thirst_urgency( "" ) > oracle.duty_urgency( "" ) );
+        CHECK( npc_decision.tick( &oracle ) == "drink_water" );
+    }
+    SECTION( "infeasible need does not inflate score over duty" ) {
+        // Sleepiness 800 -> urgency 0.8, but on meth -> can_sleep fails.
+        // Thirst 200 -> below needs_water_badly threshold -> not running.
+        // No feasible need runs, so duty should win.
+        guy.set_sleepiness( 800 );
+        guy.add_effect( effect_meth, 1_hours );
+        guy.set_thirst( 200 );
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 10, 0, 0 ) );
+        REQUIRE( oracle.needs_sleep_badly( "" ) == behavior::status_t::running );
+        REQUIRE( oracle.can_sleep( "" ) == behavior::status_t::failure );
+        CHECK( npc_decision.tick( &oracle ) == "return_to_guard_pos" );
+    }
+    SECTION( "duty wins when needs are below threshold" ) {
+        guy.set_thirst( 200 );
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 10, 0, 0 ) );
+        CHECK( npc_decision.tick( &oracle ) == "return_to_guard_pos" );
+    }
+    SECTION( "exhausted guard sleeps over duty" ) {
+        // sleepiness 600 -> urgency 0.6 > duty 0.5. Policy: exhaustion
+        // is dangerous (microsleeps), guard should sleep.
+        guy.set_sleepiness( 600 );
+        REQUIRE( oracle.needs_sleep_badly( "" ) == behavior::status_t::running );
+        REQUIRE( oracle.can_sleep( "" ) == behavior::status_t::running );
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 10, 0, 0 ) );
+        CHECK( npc_decision.tick( &oracle ) == "go_to_sleep" );
+    }
+    SECTION( "tired but not exhausted guard stays on duty" ) {
+        // sleepiness 400 -> needs_sleep_badly running, but can_sleep fails
+        // (EXHAUSTED=575). No feasible sleep -> duty wins.
+        guy.set_sleepiness( 400 );
+        REQUIRE( oracle.needs_sleep_badly( "" ) == behavior::status_t::running );
+        REQUIRE( oracle.can_sleep( "" ) == behavior::status_t::failure );
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 10, 0, 0 ) );
+        CHECK( npc_decision.tick( &oracle ) == "return_to_guard_pos" );
+    }
+    SECTION( "idle when nothing fires" ) {
+        CHECK( npc_decision.tick( &oracle ) == "idle" );
+    }
+}
+
+TEST_CASE( "npc_decision_category_mapping", "[npc][behavior]" )
+{
+    SECTION( "bt goals map to expected categories" ) {
+        CHECK( bt_goal_to_category( "fight" ) == decision_category::combat );
+        CHECK( bt_goal_to_category( "flee" ) == decision_category::combat );
+        CHECK( bt_goal_to_category( "investigate_sound" ) == decision_category::investigate );
+        CHECK( bt_goal_to_category( "drink_water" ) == decision_category::needs );
+        CHECK( bt_goal_to_category( "eat_food" ) == decision_category::needs );
+        CHECK( bt_goal_to_category( "go_to_sleep" ) == decision_category::needs );
+        CHECK( bt_goal_to_category( "wear_warmer_clothes" ) == decision_category::needs );
+        CHECK( bt_goal_to_category( "take_shelter" ) == decision_category::needs );
+        CHECK( bt_goal_to_category( "start_fire" ) == decision_category::needs );
+        CHECK( bt_goal_to_category( "return_to_guard_pos" ) == decision_category::duty );
+        CHECK( bt_goal_to_category( "idle" ) == decision_category::idle );
+        CHECK( bt_goal_to_category( "something_unknown" ) == decision_category::unmodeled );
+    }
+    SECTION( "tri-state outcome classification" ) {
+        using dc = decision_category;
+        CHECK( std::string( classify_comparison( dc::combat, dc::combat ) ) == "converged" );
+        CHECK( std::string( classify_comparison( dc::needs, dc::duty ) ) == "DIVERGED" );
+        CHECK( std::string( classify_comparison( dc::needs, dc::unmodeled ) ) == "unmodeled" );
+        CHECK( std::string( classify_comparison( dc::unmodeled, dc::combat ) ) == "unmodeled" );
+        CHECK( std::string( classify_comparison( dc::unmodeled, dc::unmodeled ) ) == "unmodeled" );
+        CHECK( std::string( classify_comparison( dc::idle, dc::idle ) ) == "converged" );
+        CHECK( std::string( classify_comparison( dc::duty, dc::needs ) ) == "DIVERGED" );
+    }
+}
+
+TEST_CASE( "npc_decision_bt_contract_guard_duty", "[npc][behavior]" )
+{
+    clear_map();
+    behavior::tree npc_decision;
+    npc_decision.add( &behavior_node_t_npc_decision.obj() );
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy );
+    guy.set_fac( faction_your_followers );
+    guy.set_mission( NPC_MISSION_GUARD );
+    behavior::character_oracle_t oracle( &guy );
+
+    SECTION( "displaced guard with mild hunger: BT chooses duty" ) {
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 10, 0, 0 ) );
+        guy.set_hunger( 100 );
+        CHECK( npc_decision.tick( &oracle ) == "return_to_guard_pos" );
+    }
+    SECTION( "displaced guard with extreme thirst and water: BT chooses need" ) {
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 10, 0, 0 ) );
+        guy.set_thirst( 1000 );
+        const item_group::ItemList water = item_group::items_from(
+                                               Item_spawn_data_test_bottle_water );
+        guy.i_add( water.front() );
+        REQUIRE( oracle.needs_water_badly( "" ) == behavior::status_t::running );
+        REQUIRE( oracle.has_water( "" ) == behavior::status_t::running );
+        CHECK( npc_decision.tick( &oracle ) == "drink_water" );
+    }
+    SECTION( "displaced exhausted guard: BT chooses sleep over duty" ) {
+        guy.set_guard_pos( guy.pos_abs() + tripoint( 10, 0, 0 ) );
+        guy.set_sleepiness( 600 );
+        REQUIRE( oracle.needs_sleep_badly( "" ) == behavior::status_t::running );
+        REQUIRE( oracle.can_sleep( "" ) == behavior::status_t::running );
+        CHECK( npc_decision.tick( &oracle ) == "go_to_sleep" );
+    }
+    SECTION( "guard at post with no needs: BT returns idle" ) {
+        guy.set_guard_pos( guy.pos_abs() );
+        CHECK( npc_decision.tick( &oracle ) == "idle" );
+    }
+}
+
+TEST_CASE( "npc_decision_predicates_registered", "[npc][behavior]" )
+{
+    CHECK( behavior::predicate_map.count( "npc_in_danger" ) == 1 );
+    CHECK( behavior::predicate_map.count( "npc_should_flee" ) == 1 );
+    CHECK( behavior::predicate_map.count( "npc_has_target" ) == 1 );
+    CHECK( behavior::predicate_map.count( "npc_has_sound_alerts" ) == 1 );
+    CHECK( behavior::predicate_map.count( "npc_displaced_from_post" ) == 1 );
+    CHECK( behavior::score_predicate_map.count( "npc_duty_urgency" ) == 1 );
 }
