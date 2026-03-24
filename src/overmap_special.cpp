@@ -16,7 +16,6 @@
 #include "enum_conversions.h"
 #include "generic_factory.h"
 #include "mod_tracker.h"
-#include "options.h"
 #include "string_formatter.h"
 #include "talker.h"
 

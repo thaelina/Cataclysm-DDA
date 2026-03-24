@@ -82,7 +82,6 @@
 #include "npc_opinion.h"
 #include "npctalk.h"
 #include "omdata.h"
-#include "options.h"
 #include "overmap_location.h"
 #include "overmapbuffer.h"
 #include "pathfinding.h"
