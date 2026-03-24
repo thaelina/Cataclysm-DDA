@@ -182,7 +182,6 @@
     "//": "Picks a random underground lab and activates the actual teleport EOC.",
     "condition": { "and": [ { "math": [ "labsunlocked == 1" ] }, { "u_has_items": { "item": "warp_labs_catalyst", "count": 1 } } ] },
     "effect": [
-      { "run_eocs": "EOC_SKY_ISLAND_MISSION_DIMENSION_SHIFT" },
       {
         "run_eoc_selector": [
           "EOC_Lab_Science_Loc_Warp",
@@ -191,12 +190,18 @@
           "EOC_Lab_TCL_Loc_Warp",
           "EOC_raidcancel"
         ],
-        "names": [ "Target: Science Lab", "Target: Subway Lab", "Target: Research Facility", "Target: Tran-Coastal Logistics", "Cancel" ],
+        "names": [
+          "Target: Science Lab",
+          "Target: Large Science Lab",
+          "Target: Research Facility",
+          "Target: Tran-Coastal Logistics",
+          "Cancel"
+        ],
         "keys": [ "1", "2", "3", "4", "5" ],
         "title": "Select a starting location",
         "descriptions": [
           "Arrive in subterranean science lab.\nBE WARNED!  You will begin inside a sealed lab, so make sure you have the means to get out!  A second card, to unlock the surface exit, is one option.  You may also consider a homeward mote or a warp skyward beacon.",
-          "Arrive in a sprawling lab connected to a secret network of subways.\nBE WARNED!  You will begin inside a sealed lab, so make sure you have the means to get out!  A second card, to unlock the surface exit, is one option.  You may also consider a homeward mote or a warp skyward beacon.",
+          "Arrive in a sprawling lab built around a hallway.\nBE WARNED!  You will begin inside a sealed lab, so make sure you have the means to get out!  A second card, to unlock the surface exit, is one option.  You may also consider a homeward mote or a warp skyward beacon.",
           "Arrive in an above-ground research facility.\nBE WARNED!  The facility was extremely damaged by the Cataclysm and the environment is filled with hostiles.  Be prepared when you undertake this mission.",
           "Arrive in a lab within a shipping facility.\nBE WARNED!  You will begin inside a sealed facility, so make sure you have the means to get out!  You may also consider a homeward mote or a warp skyward beacon.",
           "Stay on the island for now."
