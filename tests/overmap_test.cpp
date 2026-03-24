@@ -42,6 +42,7 @@
 #include "overmapbuffer.h"
 #include "point.h"
 #include "recipe.h"
+#include "regional_settings.h"
 #include "rng.h"
 #include "test_data.h"
 #include "type_id.h"
@@ -174,13 +175,16 @@ TEST_CASE( "set_and_get_overmap_scents", "[overmap]" )
 TEST_CASE( "default_overmap_generation_always_succeeds", "[overmap][slow]" )
 {
     overmap_buffer.clear();
+    const int city_size = overmap_buffer.get_default_settings(
+                              point_abs_om() ).get_settings_city().city_size;
     int overmaps_to_construct = 10;
     for( const point_abs_om &candidate_addr : closest_points_first( point_abs_om(), 10 ) ) {
         // Skip populated overmaps.
         if( overmap_buffer.has( candidate_addr ) ) {
             continue;
         }
-        overmap_special_batch test_specials = overmap_specials::get_default_batch( candidate_addr );
+        overmap_special_batch test_specials = overmap_specials::get_default_batch( candidate_addr,
+                                              city_size );
         overmap_buffer.create_custom_overmap( candidate_addr, test_specials );
         for( const overmap_special_placement &special_placement : test_specials ) {
             const overmap_special *special = special_placement.special_details;
@@ -510,7 +514,6 @@ TEST_CASE( "overmap_terrain_coverage", "[overmap][slow]" )
     g->place_player_overmap( { project_to<coords::omt>( overmap_origin + ( 6 * point::north_west ) ), 0 } );
     // Don't inherit overmap state from initialization or previous tests.
     overmap_buffer.clear();
-
     // Build the set of terrain types we expect to find. Anything still in this
     // set after generation is reported as missing.
     std::unordered_set<oter_type_id> yet_to_be_seen;
@@ -558,8 +561,10 @@ TEST_CASE( "overmap_terrain_coverage", "[overmap][slow]" )
         int occ_max;
     };
     std::unordered_map<oter_type_id, std::vector<special_spawn_info>> terrain_to_specials;
+    const int city_size = overmap_buffer.get_default_settings(
+                              point_abs_om() ).get_settings_city().city_size;
     for( const overmap_special &sp : overmap_specials::get_all() ) {
-        if( !sp.can_spawn() ) {
+        if( !sp.can_spawn( city_size ) ) {
             continue;
         }
         const overmap_special_placement_constraints &constraints = sp.get_constraints();

@@ -84,7 +84,6 @@
 #include "npc_opinion.h"
 #include "npctalk.h"
 #include "omdata.h"
-#include "options.h"
 #include "overmap_location.h"
 #include "overmapbuffer.h"
 #include "pathfinding.h"
@@ -93,6 +92,7 @@
 #include "point.h"
 #include "projectile.h"
 #include "ranged.h"
+#include "regional_settings.h"
 #include "ret_val.h"
 #include "rng.h"
 #include "simple_pathfinding.h"
@@ -5270,8 +5270,9 @@ void npc::set_omt_destination()
     if( needs.empty() ) { // We don't need anything in particular.
         needs.push_back( need_none );
 
-        // also, don't bother looking if the CITY_SIZE is 0, just go somewhere at random
-        const int city_size = get_option<int>( "CITY_SIZE" );
+        // also, don't bother looking if the city_size is 0, just go somewhere at random
+        const int city_size = overmap_buffer.get_settings(
+                                  this->pos_abs_omt() ).get_settings_city().city_size;
         if( city_size == 0 ) {
             goal = surface_omt_loc + point( rng( -90, 90 ), rng( -90, 90 ) );
             return;

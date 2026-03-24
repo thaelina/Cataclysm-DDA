@@ -362,6 +362,8 @@
   {
     "type": "region_settings_city",
     "id": "default",
+    "city_size": 8,
+    "city_spacing": 4,
     "shop_radius": 30,
     "shop_sigma": 50,
     "park_radius": 20,
@@ -823,6 +825,19 @@
       [ "barber_shop", 350 ],
       [ "s_airsoft", 100 ]
     ]
+  },
+  {
+    "type": "region_settings_city",
+    "id": "no_cities",
+    "city_size": 0,
+    "city_spacing": 0,
+    "shop_radius": 0,
+    "shop_sigma": 0,
+    "park_radius": 0,
+    "park_sigma": 0,
+    "houses": [  ],
+    "parks": [  ],
+    "shops": [  ]
   },
   {
     "type": "map_extra_collection",
