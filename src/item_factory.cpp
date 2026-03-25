@@ -395,7 +395,7 @@ void Item_factory::finalize_pre( itype &obj )
             var.alt_name = obj.name;
         };
         if( var.alt_description.empty() ) {
-            var.alt_description = obj.name;
+            var.alt_description = obj.description;
         }
     }
 
