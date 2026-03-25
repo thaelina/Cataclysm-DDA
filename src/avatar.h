@@ -473,6 +473,8 @@ class avatar : public Character
 
         // true when the space is still visible when aiming
         mutable cata::mdarray<bool, point_bub_ms> aim_cache;
+
+        move_mode_id desired_move_mode;
 };
 
 avatar &get_avatar();

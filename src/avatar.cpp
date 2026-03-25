@@ -143,6 +143,7 @@ avatar::avatar()
     grab_type = object_type::NONE;
     calorie_diary.emplace_front( );
     a_diary = nullptr;
+    desired_move_mode = move_mode_walk;
 }
 
 avatar::~avatar() = default;
