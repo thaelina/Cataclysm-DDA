@@ -1853,9 +1853,9 @@ static void open_movement_mode_menu()
 
     if( as_m.ret != UILIST_CANCEL ) {
         if( as_m.ret == cycle ) {
-            player_character.cycle_move_mode();
+            player_character.cycle_desired_move_mode();
         } else {
-            player_character.set_movement_mode( modes[as_m.ret] );
+            player_character.set_desired_movement_mode( modes[as_m.ret] );
         }
     }
 }
@@ -2254,6 +2254,19 @@ static std::map<action_id, std::string> get_actions_disabled_mounted()
     };
 }
 
+static std::vector<action_id> get_actions_move_mode()
+{
+    return std::vector<action_id> {
+        ACTION_CYCLE_MOVE,
+        ACTION_CYCLE_MOVE_REVERSE,
+        ACTION_RESET_MOVE,
+        ACTION_TOGGLE_RUN,
+        ACTION_TOGGLE_CROUCH,
+        ACTION_TOGGLE_PRONE,
+        ACTION_OPEN_MOVEMENT,
+    };
+}
+
 bool game::do_regular_action( action_id &act, avatar &player_character,
                               const std::optional<tripoint_bub_ms> &mouse_target )
 {
@@ -2289,6 +2302,24 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
         return true;
     }
 
+    const std::vector<action_id> actions_move_mode = get_actions_move_mode();
+    const bool is_actions_move_mode = std::find( actions_move_mode.begin(),
+                                      actions_move_mode.end(), act ) != actions_move_mode.end();
+    // Are we performing an action that is not a move mode action?
+    int desired_move_mode_cost = 0;
+    if( player_character.is_waiting_to_change_mode_mode() && !is_actions_move_mode ) {
+        move_mode_id desired_move = player_character.get_desired_move_mode();
+        desired_move_mode_cost = player_character.move_mode_switch_cost( player_character.move_mode,
+                                 desired_move );
+        player_character.set_movement_mode( desired_move );
+        if( player_character.move_mode == desired_move ) {
+            player_character.mod_moves( -desired_move_mode_cost );
+        } else {
+            debugmsg( "Player unable to change from move_mode(%s) to desired_move_mode(%s)",
+                      player_character.move_mode.c_str(), desired_move.c_str() );
+        }
+    }
+
     switch( act ) {
         case ACTION_NULL: // dummy entry
         case NUM_ACTIONS: // dummy entry
@@ -2310,27 +2341,27 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
             break;
 
         case ACTION_CYCLE_MOVE:
-            player_character.cycle_move_mode();
+            player_character.cycle_desired_move_mode();
             break;
 
         case ACTION_CYCLE_MOVE_REVERSE:
-            player_character.cycle_move_mode_reverse();
+            player_character.cycle_desired_move_mode_reverse();
             break;
 
         case ACTION_RESET_MOVE:
-            player_character.reset_move_mode();
+            player_character.set_walk_mode_desired();
             break;
 
         case ACTION_TOGGLE_RUN:
-            player_character.toggle_run_mode();
+            player_character.toggle_run_mode_desired();
             break;
 
         case ACTION_TOGGLE_CROUCH:
-            player_character.toggle_crouch_mode();
+            player_character.toggle_crouch_mode_desired();
             break;
 
         case ACTION_TOGGLE_PRONE:
-            player_character.toggle_prone_mode();
+            player_character.toggle_prone_mode_desired();
             break;
 
         case ACTION_OPEN_MOVEMENT:
