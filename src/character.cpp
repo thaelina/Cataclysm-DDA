@@ -2197,6 +2197,10 @@ steed_type Character::get_steed_type() const
 
 bool Character::can_switch_to( const move_mode_id &mode ) const
 {
+    if( get_steed_type() == steed_type::ANIMAL &&
+        ( mode->type() == move_mode_type::PRONE || mode->type() == move_mode_type::CROUCHING ) ) {
+        return false;
+    }
     // Only running modes are restricted at the moment and only when its your legs doing the running
     return get_steed_type() != steed_type::NONE || mode->type() != move_mode_type::RUNNING || can_run();
 }
