@@ -1826,6 +1826,96 @@ void cata_tiles::draw( const point &dest, const tripoint_bub_ms &center, int wid
                     }
                 }
             }
+            // Colored light overlay. Draws a tinted rect over tiles that have
+            // colored light energy in the cache (emergency beacons, colored fields,
+            // etc). Only the chromatic (saturated) component produces a tint --
+            // white light (equal RGB) is ignored. Alpha scales with the ratio of
+            // colored energy to total scalar light so the effect is subtle under
+            // bright ambient and vivid in darkness.
+            const level_cache &cur_cache = here.access_cache( cur_zlevel );
+            for( const tile_render_info &p : here.draw_points_cache[cur_zlevel][row] ) {
+                const tile_render_info::sprite *const
+                var = std::get_if<tile_render_info::sprite>( &p.var );
+                if( !var || var->ll == lit_level::DARK || var->ll == lit_level::BLANK ||
+                    var->ll == lit_level::MEMORIZED ) {
+                    continue;
+                }
+                const light_color_rgb &lc =
+                    cur_cache.light_color_cache[p.com.pos.x()][p.com.pos.y()];
+                if( !lc.is_colored() ) {
+                    continue;
+                }
+                // Subtract the achromatic (white) component to isolate saturated color.
+                const float min_ch = std::min( { lc.r, lc.g, lc.b } );
+                const float sat_r = lc.r - min_ch;
+                const float sat_g = lc.g - min_ch;
+                const float sat_b = lc.b - min_ch;
+                const float sat_mag = std::max( { sat_r, sat_g, sat_b } );
+                if( sat_mag < 0.01f ) {
+                    continue; // pure white light, no tint
+                }
+                // Alpha: saturated energy relative to total scalar light at this tile
+                const float scalar = cur_cache.lm[p.com.pos.x()][p.com.pos.y()].max();
+                const float ratio = scalar > 0.1f ? std::min( 1.0f, sat_mag / scalar ) : 0.0f;
+                const Uint8 alpha = static_cast<Uint8>( ratio * 80.0f );
+                if( alpha == 0 ) {
+                    continue;
+                }
+                // Normalize saturated color to full brightness for the SDL tint.
+                const SDL_Color tint = {
+                    static_cast<Uint8>( sat_r / sat_mag * 255.0f ),
+                    static_cast<Uint8>( sat_g / sat_mag * 255.0f ),
+                    static_cast<Uint8>( sat_b / sat_mag * 255.0f ),
+                    alpha
+                };
+                const point screen = player_to_screen( p.com.pos.xy() );
+                const SDL_Rect draw_rect = {
+                    screen.x, screen.y - p.com.height_3d, tile_width, tile_height
+                };
+                SetRenderDrawBlendMode( renderer, SDL_BLENDMODE_BLEND );
+                geometry->rect( renderer, draw_rect, tint );
+                SetRenderDrawBlendMode( renderer, SDL_BLENDMODE_NONE );
+            }
+        }
+        // Dawn/dusk warm color temperature overlay on outside tiles.
+        // Sun altitude drives hue: deep orange (25 deg HSV) at the horizon,
+        // gold (45 deg HSV) as the sun climbs. Sine ease gives a smooth
+        // fade in/out instead of a sudden switch at the twilight boundary.
+        if( cur_zlevel >= 0 && is_twilight( calendar::turn ) ) {
+            const units::angle alt = sun_azimuth_altitude( calendar::turn ).second;
+            // lo/hi: nautical twilight range in degrees below horizon
+            constexpr float lo = -6.0f;
+            constexpr float hi = -1.0f;
+            const float progress = std::clamp(
+                                       static_cast<float>( to_degrees( alt ) - lo ) / ( hi - lo ), 0.0f, 1.0f );
+            const float hue = 25.0f + progress * 20.0f;
+            const float ease = std::sin( progress * 3.14159f );
+            const Uint8 sun_alpha = static_cast<Uint8>( ease * 25.0f );
+            if( sun_alpha > 0 ) {
+                const light_color_rgb sun_rgb = light_color_rgb::from_hsv( hue, 0.8f, 1.0f );
+                const SDL_Color sun_tint = {
+                    static_cast<Uint8>( sun_rgb.r * 255.0f ),
+                    static_cast<Uint8>( sun_rgb.g * 255.0f ),
+                    static_cast<Uint8>( sun_rgb.b * 255.0f ),
+                    sun_alpha
+                };
+                const auto &outside_cache = here.access_cache( cur_zlevel ).outside_cache;
+                SetRenderDrawBlendMode( renderer, SDL_BLENDMODE_BLEND );
+                for( int sun_row = cur_any_tile_range.p_min.y; sun_row < cur_any_tile_range.p_max.y;
+                     sun_row++ ) {
+                    for( const tile_render_info &p : here.draw_points_cache[cur_zlevel][sun_row] ) {
+                        if( !outside_cache[p.com.pos.x()][p.com.pos.y()] ) {
+                            continue;
+                        }
+                        const point screen = player_to_screen( p.com.pos.xy() );
+                        const SDL_Rect draw_rect = {
+                            screen.x, screen.y - p.com.height_3d, tile_width, tile_height
+                        };
+                        geometry->rect( renderer, draw_rect, sun_tint );
+                    }
+                }
+                SetRenderDrawBlendMode( renderer, SDL_BLENDMODE_NONE );
+            }
         }
         cur_zlevel += 1;
     }
@@ -2995,16 +3085,17 @@ bool cata_tiles::draw_from_id_string_internal( const std::string &id, TILE_CATEG
     }
 
     //draw it!
-    draw_tile_at( display_tile, screen_pos, loc_rand, rota, ll,
-                  nv_color_active, retract, height_3d, offset );
+    const tile_render_params rp{ ll, nv_color_active };
+    draw_tile_at( display_tile, screen_pos, loc_rand, rota, rp,
+                  retract, height_3d, offset );
 
     return true;
 }
 
 bool cata_tiles::draw_sprite_at(
     const tile_type &tile, const weighted_int_list<std::vector<int>> &svlist,
-    const point &p, unsigned int loc_rand, bool rota_fg, int rota, lit_level ll,
-    bool apply_night_vision_goggles, int retract, int &height_3d, const point &offset )
+    const point &p, unsigned int loc_rand, bool rota_fg, int rota,
+    const tile_render_params &rp, int retract, int &height_3d, const point &offset )
 {
     const std::vector<int> *picked = svlist.pick( loc_rand );
     if( !picked ) {
@@ -3041,12 +3132,12 @@ bool cata_tiles::draw_sprite_at(
 
     //use night vision colors when in use
     //then use low light tile if available
-    if( ll == lit_level::MEMORIZED ) {
+    if( rp.ll == lit_level::MEMORIZED ) {
         if( const texture *ptr = tileset_ptr->get_memory_tile( sprite_index ) ) {
             sprite_tex = ptr;
         }
-    } else if( apply_night_vision_goggles ) {
-        if( ll != lit_level::LOW ) {
+    } else if( rp.use_night_vision_tiles ) {
+        if( rp.ll != lit_level::LOW ) {
             if( const texture *ptr = tileset_ptr->get_overexposed_tile( sprite_index ) ) {
                 sprite_tex = ptr;
             }
@@ -3055,7 +3146,7 @@ bool cata_tiles::draw_sprite_at(
                 sprite_tex = ptr;
             }
         }
-    } else if( ll == lit_level::LOW ) {
+    } else if( rp.ll == lit_level::LOW ) {
         if( const texture *ptr = tileset_ptr->get_shadow_tile( sprite_index ) ) {
             sprite_tex = ptr;
         }
@@ -3160,14 +3251,14 @@ bool cata_tiles::draw_sprite_at(
 
 bool cata_tiles::draw_tile_at(
     const tile_type &tile, const point &p, unsigned int loc_rand, int rota,
-    lit_level ll, bool apply_night_vision_goggles, int retract, int &height_3d,
+    const tile_render_params &rp, int retract, int &height_3d,
     const point &offset )
 {
     int fake_int = height_3d;
-    draw_sprite_at( tile, tile.bg, p, loc_rand, /*fg:*/ false, rota, ll,
-                    apply_night_vision_goggles, retract, fake_int, offset );
-    draw_sprite_at( tile, tile.fg, p, loc_rand, /*fg:*/ true, rota, ll,
-                    apply_night_vision_goggles, retract, height_3d, offset );
+    draw_sprite_at( tile, tile.bg, p, loc_rand, /*fg:*/ false, rota, rp,
+                    retract, fake_int, offset );
+    draw_sprite_at( tile, tile.fg, p, loc_rand, /*fg:*/ true, rota, rp,
+                    retract, height_3d, offset );
     return true;
 }
 
