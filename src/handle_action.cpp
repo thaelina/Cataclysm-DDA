@@ -1,5 +1,6 @@
 #include "game.h" // IWYU pragma: associated
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <initializer_list>
