@@ -113,6 +113,9 @@ enum class direction : unsigned int;
 
 static const bionic_id bio_remote( "bio_remote" );
 
+static const character_modifier_id
+character_modifier_move_mode_move_cost_mod( "move_mode_move_cost_mod" );
+
 static const damage_type_id damage_cut( "cut" );
 
 static const efftype_id effect_alarm_clock( "alarm_clock" );
@@ -2385,6 +2388,7 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
                 // so no rotation needed
                 pldrive( get_delta_from_movement_action( act, iso_rotate::no ) );
             } else {
+                const int pre_walk_moves = player_character.get_moves();
                 point_rel_ms dest_delta = get_delta_from_movement_action( act, iso_rotate::yes );
                 if( auto_travel_mode && !player_character.is_auto_moving() ) {
                     const bool use_grab_routing =
@@ -2462,6 +2466,21 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
                                        dest_delta.x(), dest_delta.y(),
                                        pos_before.x(), pos_before.y() );
                         player_character.abort_automove();
+                    }
+                }
+
+                // if we changed move modes this action, refund half the cost of changing move mode
+                // if their move action was an easy movement to represent combining the two actions
+                if( desired_move_mode_cost > 0 ) {
+                    const int moves_delta = pre_walk_moves - player_character.get_moves();
+                    // add 10% to the easy movement threshold to allow for some minor encumbrance
+                    // add 20% if going prone because it has an extra 20% crawling mod
+                    const int easy_moves = 110 /
+                                           player_character.get_modifier( character_modifier_move_mode_move_cost_mod ) *
+                                           ( player_character.is_prone() ? 1.2 : 1 );
+
+                    if( moves_delta > 0 && moves_delta <= easy_moves ) {
+                        player_character.mod_moves( desired_move_mode_cost / 2 );
                     }
                 }
 
