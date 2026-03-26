@@ -384,3 +384,136 @@ TEST_CASE( "vehicle_cone_light_carries_color", "[light_color]" )
 
     CHECK( best_r > behind_color.r );
 }
+
+TEST_CASE( "fused_color_output_matches_golden_values", "[light_color]" )
+{
+    // Golden values captured from pre-fusion code. These pin the exact
+    // per-tile RGB and scalar lightmap output for a single red point light
+    // on a dark roofed map with uniform floor.
+    setup_dark_map();
+    scoped_weather_override weather_clear( WEATHER_CLEAR );
+
+    const tripoint_bub_ms src = get_player_character().pos_bub() + tripoint::east * 5;
+
+    for( int dx = -6; dx <= 6; dx++ ) {
+        for( int dy = -6; dy <= 6; dy++ ) {
+            place_ter_roofed( src + tripoint( dx, dy, 0 ), ter_t_floor );
+        }
+    }
+    place_ter_roofed( src, ter_t_test_red_light );
+
+    rebuild_lightmap( 0 );
+
+    const map &here = get_map();
+    const level_cache &cache = here.access_cache( 0 );
+
+    // Golden 7x7 patch (inner tiles with actual color data): { delta, expected_r, expected_lm_max }
+    // g and b are always 0 for a pure red source.
+    struct golden_entry {
+        point d;
+        float r;
+        float lm;
+    };
+    // NOLINTBEGIN(cata-use-named-point-constants)
+    static const std::vector<golden_entry> golden = {
+        { { -3, -3 }, 1.438203f, 3.500000f },
+        { { -2, -3 }, 2.298876f, 3.500000f },
+        { { -1, -3 }, 2.582018f, 3.500000f },
+        { { 0, -3 }, 2.582018f, 3.500000f },
+        { { 1, -3 }, 2.582018f, 3.500000f },
+        { { 2, -3 }, 2.298876f, 3.500000f },
+        { { 3, -3 }, 1.438203f, 3.500000f },
+        { { -3, -2 }, 2.298876f, 3.500000f },
+        { { -2, -2 }, 4.239466f, 4.723102f },
+        { { -1, -2 }, 5.266641f, 4.723102f },
+        { { 0, -2 }, 5.821768f, 4.723102f },
+        { { 1, -2 }, 5.266641f, 4.723102f },
+        { { 2, -2 }, 4.239465f, 4.723102f },
+        { { 3, -2 }, 2.298876f, 3.500000f },
+        { { -3, -1 }, 2.582018f, 3.500000f },
+        { { -2, -1 }, 5.266641f, 4.723102f },
+        { { -1, -1 }, 6.974808f, 9.719253f },
+        { { 0, -1 }, 8.085064f, 9.719253f },
+        { { 1, -1 }, 6.974808f, 9.719253f },
+        { { 2, -1 }, 5.266640f, 4.723102f },
+        { { 3, -1 }, 2.582018f, 3.500000f },
+        { { -3, 0 }, 2.582018f, 3.500000f },
+        { { -2, 0 }, 5.821769f, 4.723102f },
+        { { -1, 0 }, 8.085064f, 9.719253f },
+        { { 0, 0 }, 9.750447f, 10.000000f },
+        { { 1, 0 }, 8.085064f, 9.719253f },
+        { { 2, 0 }, 5.821768f, 4.723102f },
+        { { 3, 0 }, 2.582018f, 3.500000f },
+        { { -3, 1 }, 2.582018f, 3.500000f },
+        { { -2, 1 }, 5.266641f, 4.723102f },
+        { { -1, 1 }, 6.974808f, 9.719253f },
+        { { 0, 1 }, 8.085063f, 9.719253f },
+        { { 1, 1 }, 6.974808f, 9.719253f },
+        { { 2, 1 }, 5.266640f, 4.723102f },
+        { { 3, 1 }, 2.582018f, 3.500000f },
+        { { -3, 2 }, 2.298876f, 3.500000f },
+        { { -2, 2 }, 4.239466f, 4.723102f },
+        { { -1, 2 }, 5.266641f, 4.723102f },
+        { { 0, 2 }, 5.821768f, 4.723102f },
+        { { 1, 2 }, 5.266641f, 4.723102f },
+        { { 2, 2 }, 4.239466f, 4.723102f },
+        { { 3, 2 }, 2.298876f, 3.500000f },
+        { { -3, 3 }, 1.438203f, 3.500000f },
+        { { -2, 3 }, 2.298876f, 3.500000f },
+        { { -1, 3 }, 2.582018f, 3.500000f },
+        { { 0, 3 }, 2.582018f, 3.500000f },
+        { { 1, 3 }, 2.582018f, 3.500000f },
+        { { 2, 3 }, 2.298876f, 3.500000f },
+        { { 3, 3 }, 1.438203f, 3.500000f },
+    };
+    // NOLINTEND(cata-use-named-point-constants)
+
+    for( const golden_entry &g : golden ) {
+        const point p = g.d + point( src.x(), src.y() );
+        CAPTURE( g.d );
+        CHECK( cache.light_color_cache[p.x][p.y].r == Approx( g.r ).margin( 0.01f ) );
+        CHECK( cache.light_color_cache[p.x][p.y].g == Approx( 0.0f ).margin( 0.01f ) );
+        CHECK( cache.light_color_cache[p.x][p.y].b == Approx( 0.0f ).margin( 0.01f ) );
+        CHECK( cache.lm[p.x][p.y].max() == Approx( g.lm ).margin( 0.01f ) );
+    }
+}
+
+// Manual-only capture helper for regenerating golden values.
+// Run with: ./tests/cata_test "[golden_capture]"
+TEST_CASE( "capture_golden_values_for_point_light", "[.][golden_capture]" )
+{
+    setup_dark_map();
+    scoped_weather_override weather_clear( WEATHER_CLEAR );
+
+    const tripoint_bub_ms src = get_player_character().pos_bub() + tripoint::east * 5;
+
+    for( int dx = -6; dx <= 6; dx++ ) {
+        for( int dy = -6; dy <= 6; dy++ ) {
+            place_ter_roofed( src + tripoint( dx, dy, 0 ), ter_t_floor );
+        }
+    }
+    place_ter_roofed( src, ter_t_test_red_light );
+
+    rebuild_lightmap( 0 );
+
+    const map &here = get_map();
+    const level_cache &cache = here.access_cache( 0 );
+
+    // NOLINTNEXTLINE(cata-text-style)
+    printf( "\n=== GOLDEN VALUES: 9x9 patch centered on red light ===\n" );
+    // NOLINTNEXTLINE(cata-text-style)
+    printf( "// { dx, dy, r, g, b, lm_max }\n" );
+    for( int dy = -4; dy <= 4; dy++ ) {
+        for( int dx = -4; dx <= 4; dx++ ) {
+            // NOLINTNEXTLINE(cata-combine-locals-into-point)
+            const int x = src.x() + dx;
+            const int y = src.y() + dy;
+            const auto &c = cache.light_color_cache[x][y];
+            const float lm = cache.lm[x][y].max();
+            // NOLINTNEXTLINE(cata-text-style)
+            printf( "{ %2d, %2d, %10.6ff, %10.6ff, %10.6ff, %10.6ff },\n",
+                    dx, dy, c.r, c.g, c.b, lm );
+        }
+    }
+}
+
