@@ -76,7 +76,8 @@ bool route_to_destination( Character &you, player_activity &act,
 */
 bool sort_skip_item( Character &you, const item *it,
                      const std::vector<item_location> &other_activity_items,
-                     bool ignore_favorite, const tripoint_abs_ms &src );
+                     bool ignore_favorite, const tripoint_abs_ms &src,
+                     bool *spillable_skipped = nullptr );
 
 /**
 * Sets sorting options given nearby UNLOAD_ALL zones
@@ -104,7 +105,8 @@ bool ignore_zone_position( Character &you, const tripoint_abs_ms &src, bool igno
 bool has_items_to_sort( Character &you, const tripoint_abs_ms &src,
                         zone_sorting::unload_sort_options zone_unload_options,
                         const std::vector<item_location> &other_activity_items,
-                        const zone_sorting::zone_items &items, bool *pickup_failure );
+                        const zone_sorting::zone_items &items, bool *pickup_failure,
+                        bool *spillable_skipped = nullptr );
 bool can_unload( item *it );
 void add_item( const std::optional<vpart_reference> &vp, const tripoint_bub_ms &src_bub,
                const item &it );

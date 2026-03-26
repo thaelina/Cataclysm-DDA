@@ -11,15 +11,18 @@
 #include "activity_actor.h"
 #include "activity_actor_definitions.h"
 #include "activity_item_handling.h"
-#include "clone_ptr.h"
 #include "avatar.h"
+#include "cached_options.h"
 #include "calendar.h"
 #include "cata_catch.h"
+#include "cata_scope_helpers.h"
 #include "character_attire.h"
+#include "clone_ptr.h"
 #include "clzones.h"
 #include "coordinates.h"
 #include "enums.h"
 #include "item.h"
+#include "item_location.h"
 #include "item_pocket.h"
 #include "map.h"
 #include "map_helpers.h"
@@ -47,6 +50,7 @@ static const itype_id itype_chem_washing_soda( "chem_washing_soda" );
 static const itype_id itype_test_apple( "test_apple" );
 static const itype_id itype_test_bitter_almond( "test_bitter_almond" );
 static const itype_id itype_test_heavy_boulder( "test_heavy_boulder" );
+static const itype_id itype_test_liquid_1ml( "test_liquid_1ml" );
 static const itype_id itype_test_milk( "test_milk" );
 static const itype_id
 itype_test_watertight_open_sealed_container_250ml( "test_watertight_open_sealed_container_250ml" );
@@ -59,6 +63,7 @@ static const vproto_id vehicle_prototype_test_shopping_cart( "test_shopping_cart
 static const vproto_id vehicle_prototype_test_turret_rig( "test_turret_rig" );
 
 static const zone_type_id zone_type_LOOT_CHEMICAL( "LOOT_CHEMICAL" );
+static const zone_type_id zone_type_LOOT_DEFAULT( "LOOT_DEFAULT" );
 static const zone_type_id zone_type_LOOT_DRINK( "LOOT_DRINK" );
 static const zone_type_id zone_type_LOOT_FOOD( "LOOT_FOOD" );
 static const zone_type_id zone_type_LOOT_PDRINK( "LOOT_PDRINK" );
@@ -2242,7 +2247,9 @@ TEST_CASE( "zone_sort_unload_liquid_container_hang", "[zones][items][activities]
     const tripoint_abs_ms start_abs = here.get_abs( start_pos );
     dummy.set_pos_abs_only( start_abs );
 
-    const tripoint_bub_ms chem_pos = start_pos + tripoint( 3, 0, 0 );
+    // Adjacent destination so process_activity completes without routing
+    // (non-adjacent would leave stale destination_point for later tests).
+    const tripoint_bub_ms chem_pos = start_pos + tripoint::east;
     here.ter_set( chem_pos, ter_t_floor );
     create_tile_zone( "Unsorted", zone_type_LOOT_UNSORTED, start_abs );
     create_tile_zone( "Unload All", zone_type_UNLOAD_ALL, start_abs );
@@ -2651,4 +2658,263 @@ TEST_CASE( "zone_sort_viewport_lifecycle", "[zones][viewport][activities]" )
             CHECK( actor->viewport_saved_zoom == 16 );  // DEFAULT_TILESET_ZOOM
         }
     }
+}
+
+// Issue #86095: zone sort should skip nonempty spillable containers to avoid
+// triggering the interactive liquid dialog during automated sorting.
+
+TEST_CASE( "zone_sort_skips_spillable_container_in_mixed_source",
+           "[zones][items][activities][sorting]" )
+{
+    avatar &dummy = get_avatar();
+    map &here = get_map();
+
+    clear_avatar();
+    clear_map_without_vision();
+    dummy.clear_destination();
+
+    restore_on_out_of_scope<test_mode_spilling_action_t> restore_spill( test_mode_spilling_action );
+    test_mode_spilling_action = test_mode_spilling_action_t::spill_all;
+
+    const tripoint_bub_ms start_pos = tripoint_bub_ms::zero + tripoint::east;
+    const tripoint_abs_ms start_abs = here.get_abs( start_pos );
+    dummy.set_pos_abs_only( start_abs );
+    dummy.worn.wear_item( dummy, item( itype_backpack ), false, false );
+
+    const tripoint_bub_ms dest_pos = start_pos + tripoint( 3, 0, 0 );
+    here.ter_set( dest_pos, ter_t_floor );
+
+    create_tile_zone( "Unsorted", zone_type_LOOT_UNSORTED, start_abs );
+    create_tile_zone( "Food", zone_type_LOOT_FOOD, here.get_abs( dest_pos ) );
+    // LOOT_DEFAULT so the spillable container has a valid destination
+    // (its category won't match LOOT_FOOD)
+    create_tile_zone( "Default", zone_type_LOOT_DEFAULT, here.get_abs( dest_pos ) );
+
+    // Spillable container with liquid
+    item container( itype_test_watertight_open_sealed_container_250ml );
+    item liquid( itype_test_liquid_1ml );
+    liquid.charges = 5;
+    REQUIRE( container.put_in( liquid, pocket_type::CONTAINER ).success() );
+    REQUIRE( container.is_bucket_nonempty() );
+    here.add_item_or_charges( start_pos, container );
+
+    // Normal food item alongside the spillable container
+    here.add_item_or_charges( start_pos, item( itype_test_apple ) );
+
+    here.invalidate_map_cache( 0 );
+    here.build_map_cache( 0, true );
+
+    dummy.assign_activity( zone_sort_activity_actor() );
+
+    // Teleport-and-resume: route_to_destination nulls the activity and sets
+    // destination_point for non-adjacent travel. Teleport there and restart.
+    int teleports = 0;
+    const int max_teleports = 30;
+    do {
+        int turns = 0;
+        while( dummy.activity && turns < 200 ) {
+            dummy.mod_moves( dummy.get_speed() );
+            while( dummy.get_moves() > 0 && dummy.activity ) {
+                dummy.activity.do_turn( dummy );
+            }
+            turns++;
+        }
+        if( dummy.destination_point ) {
+            dummy.setpos( here, here.get_bub( *dummy.destination_point ) );
+            if( dummy.has_destination_activity() ) {
+                dummy.start_destination_activity();
+            } else {
+                dummy.clear_destination();
+            }
+            teleports++;
+        }
+    } while( ( dummy.activity || dummy.destination_point ) && teleports < max_teleports );
+
+    REQUIRE( teleports < max_teleports );
+
+    // Spillable container must remain at source with liquid intact
+    bool found_container_with_liquid = false;
+    for( const item &it : here.i_at( start_pos ) ) {
+        if( it.typeId() == itype_test_watertight_open_sealed_container_250ml ) {
+            found_container_with_liquid = it.has_item_with( []( const item & nested ) {
+                return nested.typeId() == itype_test_liquid_1ml;
+            } );
+        }
+    }
+    CHECK( found_container_with_liquid );
+
+    // Apple should have been sorted to destination
+    CHECK( count_items_or_charges( dest_pos, itype_test_apple, std::nullopt ) == 1 );
+}
+
+TEST_CASE( "zone_sort_completes_when_only_spillable_items_at_source",
+           "[zones][items][activities][sorting]" )
+{
+    avatar &dummy = get_avatar();
+    map &here = get_map();
+
+    clear_avatar();
+    clear_map_without_vision();
+    dummy.clear_destination();
+
+    restore_on_out_of_scope<test_mode_spilling_action_t> restore_spill( test_mode_spilling_action );
+    test_mode_spilling_action = test_mode_spilling_action_t::spill_all;
+
+    const tripoint_bub_ms start_pos = tripoint_bub_ms::zero + tripoint::east;
+    const tripoint_abs_ms start_abs = here.get_abs( start_pos );
+    dummy.set_pos_abs_only( start_abs );
+    dummy.worn.wear_item( dummy, item( itype_backpack ), false, false );
+
+    const tripoint_bub_ms dest_pos = start_pos + tripoint( 3, 0, 0 );
+    here.ter_set( dest_pos, ter_t_floor );
+
+    create_tile_zone( "Unsorted", zone_type_LOOT_UNSORTED, start_abs );
+    create_tile_zone( "Default", zone_type_LOOT_DEFAULT, here.get_abs( dest_pos ) );
+
+    // Only a spillable container at source
+    item container( itype_test_watertight_open_sealed_container_250ml );
+    item liquid( itype_test_liquid_1ml );
+    liquid.charges = 5;
+    REQUIRE( container.put_in( liquid, pocket_type::CONTAINER ).success() );
+    REQUIRE( container.is_bucket_nonempty() );
+    here.add_item_or_charges( start_pos, container );
+
+    dummy.assign_activity( zone_sort_activity_actor() );
+    process_activity( dummy );
+
+    // Container must remain at source with liquid inside
+    bool found_container_with_liquid = false;
+    for( const item &it : here.i_at( start_pos ) ) {
+        if( it.typeId() == itype_test_watertight_open_sealed_container_250ml ) {
+            found_container_with_liquid = it.has_item_with( []( const item & nested ) {
+                return nested.typeId() == itype_test_liquid_1ml;
+            } );
+        }
+    }
+    CHECK( found_container_with_liquid );
+
+    CHECK( !dummy.activity );
+}
+
+// Direct characterization: has_items_to_sort must return false when a source
+// tile contains only nonempty spillable containers (the THINK-layer skip).
+TEST_CASE( "has_items_to_sort_returns_false_for_spillable_only_source",
+           "[zones][items][sorting]" )
+{
+    avatar &dummy = get_avatar();
+    map &here = get_map();
+
+    clear_avatar();
+    clear_map_without_vision();
+    dummy.clear_destination();
+
+    const tripoint_bub_ms start_pos = tripoint_bub_ms::zero + tripoint::east;
+    const tripoint_abs_ms start_abs = here.get_abs( start_pos );
+    dummy.set_pos_abs_only( start_abs );
+
+    const tripoint_bub_ms dest_pos = start_pos + tripoint( 3, 0, 0 );
+    here.ter_set( dest_pos, ter_t_floor );
+
+    create_tile_zone( "Unsorted", zone_type_LOOT_UNSORTED, start_abs );
+    create_tile_zone( "Default", zone_type_LOOT_DEFAULT, here.get_abs( dest_pos ) );
+
+    item container( itype_test_watertight_open_sealed_container_250ml );
+    item liquid( itype_test_liquid_1ml );
+    liquid.charges = 5;
+    REQUIRE( container.put_in( liquid, pocket_type::CONTAINER ).success() );
+    REQUIRE( container.is_bucket_nonempty() );
+    here.add_item_or_charges( start_pos, container );
+
+    zone_sorting::zone_items items = zone_sorting::populate_items( start_pos );
+    REQUIRE( !items.empty() );
+
+    zone_sorting::unload_sort_options zone_unload_options =
+        zone_sorting::set_unload_options( dummy, start_abs, true );
+
+    std::vector<item_location> other_activity_items;
+    bool pickup_failure = false;
+
+    bool result = zone_sorting::has_items_to_sort( dummy, start_abs, zone_unload_options,
+                  other_activity_items, items, &pickup_failure );
+
+    CHECK_FALSE( result );
+}
+
+TEST_CASE( "zone_sort_sealed_liquid_container_is_sorted_normally",
+           "[zones][items][activities][sorting]" )
+{
+    avatar &dummy = get_avatar();
+    map &here = get_map();
+
+    clear_avatar();
+    clear_map_without_vision();
+    dummy.clear_destination();
+
+    const tripoint_bub_ms start_pos = tripoint_bub_ms::zero + tripoint::east;
+    const tripoint_abs_ms start_abs = here.get_abs( start_pos );
+    dummy.set_pos_abs_only( start_abs );
+    dummy.worn.wear_item( dummy, item( itype_backpack ), false, false );
+
+    const tripoint_bub_ms dest_pos = start_pos + tripoint( 3, 0, 0 );
+    const tripoint_abs_ms dest_abs = here.get_abs( dest_pos );
+    here.ter_set( dest_pos, ter_t_floor );
+
+    create_tile_zone( "Unsorted", zone_type_LOOT_UNSORTED, start_abs );
+    create_tile_zone( "Default", zone_type_LOOT_DEFAULT, dest_abs );
+
+    item container( itype_test_watertight_open_sealed_container_250ml );
+    item liquid( itype_test_liquid_1ml );
+    liquid.charges = 5;
+    REQUIRE( container.put_in( liquid, pocket_type::CONTAINER ).success() );
+    REQUIRE( container.seal() );
+    REQUIRE( !container.is_bucket_nonempty() );
+
+    // Verify zone classification recognizes this item
+    const zone_manager &mgr = zone_manager::get_manager();
+    REQUIRE( mgr.get_near_zone_type_for_item( container, start_abs ) == zone_type_LOOT_DEFAULT );
+
+    here.add_item_or_charges( start_pos, container );
+
+    here.invalidate_map_cache( 0 );
+    here.build_map_cache( 0, true );
+
+    dummy.assign_activity( zone_sort_activity_actor() );
+
+    int teleports = 0;
+    const int max_teleports = 30;
+    do {
+        int turns = 0;
+        while( dummy.activity && turns < 200 ) {
+            dummy.mod_moves( dummy.get_speed() );
+            while( dummy.get_moves() > 0 && dummy.activity ) {
+                dummy.activity.do_turn( dummy );
+            }
+            turns++;
+        }
+        if( dummy.destination_point ) {
+            dummy.setpos( here, here.get_bub( *dummy.destination_point ) );
+            if( dummy.has_destination_activity() ) {
+                dummy.start_destination_activity();
+            } else {
+                dummy.clear_destination();
+            }
+            teleports++;
+        }
+    } while( ( dummy.activity || dummy.destination_point ) && teleports < max_teleports );
+
+    REQUIRE( teleports < max_teleports );
+
+    // Sealed container should be at destination with liquid intact
+    bool found_at_dest = false;
+    for( const item &it : here.i_at( dest_pos ) ) {
+        if( it.typeId() == itype_test_watertight_open_sealed_container_250ml ) {
+            found_at_dest = it.has_item_with( []( const item & nested ) {
+                return nested.typeId() == itype_test_liquid_1ml;
+            } );
+        }
+    }
+    CHECK( found_at_dest );
+
+    CHECK( count_items_or_charges( start_pos, itype_test_watertight_open_sealed_container_250ml,
+                                   std::nullopt ) == 0 );
 }

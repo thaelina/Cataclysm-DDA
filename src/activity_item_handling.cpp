@@ -903,12 +903,23 @@ bool route_to_destination( Character &you, player_activity &act,
 
 bool sort_skip_item( Character &you, const item *it,
                      const std::vector<item_location> &other_activity_items,
-                     bool ignore_favorite, const tripoint_abs_ms &src )
+                     bool ignore_favorite, const tripoint_abs_ms &src,
+                     bool *spillable_skipped )
 {
     const zone_manager &mgr = zone_manager::get_manager();
 
     // skip unpickable liquid
     if( !it->made_of_from_type( phase_id::SOLID ) ) {
+        return true;
+    }
+
+    // skip nonempty spillable containers -- picking them up triggers the
+    // interactive liquid dialog, which is inappropriate during automated
+    // sorting.  Normal pickup also refuses these (pickup.cpp, ACT_INSERT_ITEM).
+    if( it->is_bucket_nonempty() ) {
+        if( spillable_skipped ) {
+            *spillable_skipped = true;
+        }
         return true;
     }
 
@@ -1040,7 +1051,8 @@ bool ignore_zone_position( Character &you, const tripoint_abs_ms &src,
 bool has_items_to_sort( Character &you, const tripoint_abs_ms &src,
                         unload_sort_options zone_unload_options,
                         const std::vector<item_location> &other_activity_items,
-                        const zone_items &items, bool *pickup_failure )
+                        const zone_items &items, bool *pickup_failure,
+                        bool *spillable_skipped )
 {
     const zone_manager &mgr = zone_manager::get_manager();
     const faction_id fac_id = _fac_id( you );
@@ -1104,7 +1116,7 @@ bool has_items_to_sort( Character &you, const tripoint_abs_ms &src,
         }
 
         if( sort_skip_item( you, it, other_activity_items,
-                            zone_unload_options.ignore_favorite, src ) ) {
+                            zone_unload_options.ignore_favorite, src, spillable_skipped ) ) {
             continue;
         }
 
