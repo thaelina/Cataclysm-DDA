@@ -1,6 +1,7 @@
 #include "lightmap.h" // IWYU pragma: associated
 #include "shadowcasting.h" // IWYU pragma: associated
 
+#include <array>
 #include <bitset>
 #include <cmath>
 #include <cstdlib>
@@ -455,6 +456,7 @@ void map::generate_lightmap( const int zlev )
     lm.fill( four_quadrants{} );
     sm.fill( 0 );
     map_cache.light_color_cache.fill( light_color_rgb{} );
+    map_cache.has_colored_lights = false;
 
     /* Bulk light sources wastefully cast rays into neighbors; a burning hospital can produce
          significant slowdown, so for stuff like fire and lava:
@@ -672,7 +674,7 @@ void map::generate_lightmap( const int zlev )
     // 3x3 box blur on the color cache softens residual octant boundary seams.
     // Even with per-channel max in the color write, attenuation differences
     // between adjacent octants can leave visible intensity steps.
-    {
+    if( map_cache.has_colored_lights ) {
         auto &light_color_cache = map_cache.light_color_cache;
         static auto blur_buf =
             std::make_unique<cata::mdarray<light_color_rgb, point_bub_ms>>();
@@ -957,6 +959,30 @@ static constexpr quadrant quadrant_from_x_y( int x, int y )
            ( ( y > 0 ) ? quadrant::NE : quadrant::SE );
 }
 
+// Precomputed 2D Euclidean distances for castLight inner loop.
+// Eliminates sqrt calls from the hottest code path.
+static const auto &trig_dist_2d_lut()
+{
+    static const auto lut = []() {
+        constexpr int N = MAX_VIEW_DISTANCE + 1;
+        std::array<std::array<int, N>, N> t{};
+        for( int x = 0; x < N; ++x ) {
+            for( int y = 0; y < N; ++y ) {
+                t[x][y] = static_cast<int>(
+                              std::sqrt( static_cast<double>( x * x + y * y ) ) );
+            }
+        }
+        return t;
+    }
+    ();
+    return lut;
+}
+
+int trig_dist_2d( point delta )
+{
+    return trig_dist_2d_lut()[std::abs( delta.x )][std::abs( delta.y )];
+}
+
 template<int xx, int xy, int yx, int yy, typename T, typename Out,
          T( *calc )( const T &, const T &, const int & ),
          bool( *check )( const T &, const T & ),
@@ -1019,7 +1045,9 @@ void castLight( cata::mdarray<Out, point_bub_ms> &output_cache,
                 current_transparency = input_array[ current.x ][ current.y ];
             }
 
-            const int dist = rl_dist( tripoint::zero, delta ) + offsetDistance;
+            const int dist = ( trigdist
+                               ? trig_dist_2d_lut()[std::abs( delta.x )][std::abs( delta.y )]
+                               : std::max( std::abs( delta.x ), std::abs( delta.y ) ) ) + offsetDistance;
             last_intensity = calc( numerator, cumulative_transparency, dist );
 
             T new_transparency = input_array[ current.x ][ current.y ];
@@ -1340,6 +1368,7 @@ void map::apply_light_source( const tripoint_bub_ms &p, float luminance )
         source_color = buf.color * ( 1.0f / buf.luminance );
         // Set source tile color directly
         light_color_cache[p2.x()][p2.y()] += source_color * luminance;
+        cache.has_colored_lights = true;
     }
 
     /* If we're a 5 luminance fire , we skip casting rays into ey && sx if we have
@@ -1464,6 +1493,7 @@ void map::apply_light_arc( const tripoint_bub_ms &p, const units::angle &angle, 
     if( has_color ) {
         // Source tile gets only the local halo intensity, matching scalar path
         light_color_cache[p2.x()][p2.y()] += color * LIGHT_SOURCE_LOCAL;
+        cache.has_colored_lights = true;
     }
 
     const units::angle wangle = wideangle / 2.0;
