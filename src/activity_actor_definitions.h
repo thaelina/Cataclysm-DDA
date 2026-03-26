@@ -4116,6 +4116,7 @@ class zone_sort_activity_actor : public zone_activity_actor
         // Place(s) that the current stuff can be dropped off at.
         std::vector<tripoint_abs_ms> dropoff_coords;
         bool pickup_failure_reported = false;
+        bool spillable_skip_reported = false; // NOLINT(cata-serialize)
         // Tracks whether current batch used virtual pickup (items left on cart).
         // Batch-scoped: captured and cleared in pre-loop section of stage_do.
         bool virtual_pickup_active = false;

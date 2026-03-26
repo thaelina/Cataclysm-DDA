@@ -812,7 +812,9 @@ void item_pocket::handle_liquid_or_spill( Character &guy, const item *avoid )
         if( iter->made_of( phase_id::LIQUID ) ) {
             liquid_dest_opt liquid_target;
             while( iter->charges > 0 && liquid_handler::handle_liquid( *iter, liquid_target, avoid, 1 ) ) {
-                // query until completely handled or explicitly canceled
+                // Reset so the next iteration re-prompts for a target,
+                // matching consume_liquid (handle_liquid.cpp).
+                liquid_target.dest_opt = LD_NULL;
             }
             if( iter->charges == 0 ) {
                 iter = contents.erase( iter );

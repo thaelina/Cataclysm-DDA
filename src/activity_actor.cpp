@@ -13130,8 +13130,9 @@ bool zone_sort_activity_actor::stage_think( player_activity &act, Character &you
 
         // check if there is valid destination for any item of the tile
         bool pickup_failure;
+        bool spillable_skipped = false;
         bool has_items_to_work_on = zone_sorting::has_items_to_sort( you, src, zone_unload_options,
-                                    other_activity_items, items, &pickup_failure );
+                                    other_activity_items, items, &pickup_failure, &spillable_skipped );
 
         if( pickup_failure && !pickup_failure_reported ) {
             pickup_failure_reported = true;
@@ -13139,6 +13140,12 @@ bool zone_sort_activity_actor::stage_think( player_activity &act, Character &you
                                     _( "At least one item to be sorted is too large/heavy for %s to sort.  "
                                        "Emptying the inventory and freeing up the hands will allow for more efficient sorting." ),
                                     you.disp_name() );
+        }
+
+        if( spillable_skipped && !spillable_skip_reported ) {
+            spillable_skip_reported = true;
+            you.add_msg_if_player( m_info,
+                                   _( "Some open containers were not sorted to avoid spilling." ) );
         }
 
         if( !has_items_to_work_on ) {
