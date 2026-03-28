@@ -8952,7 +8952,7 @@ void game::on_move_effects()
     if( u.is_running() ) {
         // If mounted, don't break trot
         if( !u.is_mounted() && !u.can_run() ) {
-            u.toggle_run_mode();
+            u.reset_move_mode();
         }
         if( u.get_stamina() <= 0 ) {
             u.add_effect( effect_winded, 10_turns );

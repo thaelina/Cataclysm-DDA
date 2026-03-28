@@ -1,5 +1,6 @@
 #include "game.h" // IWYU pragma: associated
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <initializer_list>
@@ -112,6 +113,9 @@ enum class direction : unsigned int;
 #endif
 
 static const bionic_id bio_remote( "bio_remote" );
+
+static const character_modifier_id
+character_modifier_move_mode_move_cost_mod( "move_mode_move_cost_mod" );
 
 static const damage_type_id damage_cut( "cut" );
 
@@ -1839,9 +1843,18 @@ static void open_movement_mode_menu()
 
     for( size_t i = 0; i < modes.size(); ++i ) {
         const move_mode_id &curr = modes[i];
+        std::string label = curr->name();
+        const float required_moves = player_character.move_mode_switch_cost(
+                                         player_character.current_movement_mode(), curr );
+        const float required_seconds = required_moves / player_character.get_speed();
+
+        if( required_seconds > 0 ) {
+            label += string_format( _( " (%.2f s)" ), required_seconds );
+        }
+
         as_m.entries.emplace_back( static_cast<int>( i ), player_character.can_switch_to( curr ),
                                    curr->letter(),
-                                   curr->name() );
+                                   label );
     }
     as_m.entries.emplace_back( cycle,
                                true, // cycling movement is controlled in relevant functions, always allow
@@ -1853,9 +1866,9 @@ static void open_movement_mode_menu()
 
     if( as_m.ret != UILIST_CANCEL ) {
         if( as_m.ret == cycle ) {
-            player_character.cycle_move_mode();
+            player_character.cycle_desired_move_mode();
         } else {
-            player_character.set_movement_mode( modes[as_m.ret] );
+            player_character.set_desired_movement_mode( modes[as_m.ret] );
         }
     }
 }
@@ -2254,6 +2267,19 @@ static std::map<action_id, std::string> get_actions_disabled_mounted()
     };
 }
 
+static std::vector<action_id> get_actions_move_mode()
+{
+    return std::vector<action_id> {
+        ACTION_CYCLE_MOVE,
+        ACTION_CYCLE_MOVE_REVERSE,
+        ACTION_RESET_MOVE,
+        ACTION_TOGGLE_RUN,
+        ACTION_TOGGLE_CROUCH,
+        ACTION_TOGGLE_PRONE,
+        ACTION_OPEN_MOVEMENT,
+    };
+}
+
 bool game::do_regular_action( action_id &act, avatar &player_character,
                               const std::optional<tripoint_bub_ms> &mouse_target )
 {
@@ -2289,6 +2315,24 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
         return true;
     }
 
+    const std::vector<action_id> actions_move_mode = get_actions_move_mode();
+    const bool is_actions_move_mode = std::find( actions_move_mode.begin(),
+                                      actions_move_mode.end(), act ) != actions_move_mode.end();
+    // Are we performing an action that is not a move mode action?
+    int desired_move_mode_cost = 0;
+    if( player_character.is_waiting_to_change_mode_mode() && !is_actions_move_mode ) {
+        move_mode_id desired_move = player_character.get_desired_move_mode();
+        desired_move_mode_cost = player_character.move_mode_switch_cost( player_character.move_mode,
+                                 desired_move );
+        player_character.set_movement_mode( desired_move );
+        if( player_character.move_mode == desired_move ) {
+            player_character.mod_moves( -desired_move_mode_cost );
+        } else {
+            debugmsg( "Player unable to change from move_mode(%s) to desired_move_mode(%s)",
+                      player_character.move_mode.c_str(), desired_move.c_str() );
+        }
+    }
+
     switch( act ) {
         case ACTION_NULL: // dummy entry
         case NUM_ACTIONS: // dummy entry
@@ -2310,27 +2354,27 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
             break;
 
         case ACTION_CYCLE_MOVE:
-            player_character.cycle_move_mode();
+            player_character.cycle_desired_move_mode();
             break;
 
         case ACTION_CYCLE_MOVE_REVERSE:
-            player_character.cycle_move_mode_reverse();
+            player_character.cycle_desired_move_mode_reverse();
             break;
 
         case ACTION_RESET_MOVE:
-            player_character.reset_move_mode();
+            player_character.set_walk_mode_desired();
             break;
 
         case ACTION_TOGGLE_RUN:
-            player_character.toggle_run_mode();
+            player_character.toggle_run_mode_desired();
             break;
 
         case ACTION_TOGGLE_CROUCH:
-            player_character.toggle_crouch_mode();
+            player_character.toggle_crouch_mode_desired();
             break;
 
         case ACTION_TOGGLE_PRONE:
-            player_character.toggle_prone_mode();
+            player_character.toggle_prone_mode_desired();
             break;
 
         case ACTION_OPEN_MOVEMENT:
@@ -2354,6 +2398,7 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
                 // so no rotation needed
                 pldrive( get_delta_from_movement_action( act, iso_rotate::no ) );
             } else {
+                const int pre_walk_moves = player_character.get_moves();
                 point_rel_ms dest_delta = get_delta_from_movement_action( act, iso_rotate::yes );
                 if( auto_travel_mode && !player_character.is_auto_moving() ) {
                     const bool use_grab_routing =
@@ -2431,6 +2476,21 @@ bool game::do_regular_action( action_id &act, avatar &player_character,
                                        dest_delta.x(), dest_delta.y(),
                                        pos_before.x(), pos_before.y() );
                         player_character.abort_automove();
+                    }
+                }
+
+                // if we changed move modes this action, refund half the cost of changing move mode
+                // if their move action was an easy movement to represent combining the two actions
+                if( desired_move_mode_cost > 0 ) {
+                    const int moves_delta = pre_walk_moves - player_character.get_moves();
+                    // add 10% to the easy movement threshold to allow for some minor encumbrance
+                    // add 20% if going prone because it has an extra 20% crawling mod
+                    const int easy_moves = 110 /
+                                           player_character.get_modifier( character_modifier_move_mode_move_cost_mod ) *
+                                           ( player_character.is_prone() ? 1.2 : 1 );
+
+                    if( moves_delta > 0 && moves_delta <= easy_moves ) {
+                        player_character.mod_moves( desired_move_mode_cost / 2 );
                     }
                 }
 
