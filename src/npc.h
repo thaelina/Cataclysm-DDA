@@ -70,10 +70,6 @@ constexpr float NPC_MONSTER_DANGER_MAX = 150.0f;
 constexpr float NPC_CHARACTER_DANGER_MAX = 250.0f;
 constexpr float NPC_COWARDICE_MODIFIER = 0.25f;
 
-namespace catacurses
-{
-class window;
-}  // namespace catacurses
 class gun_mode;
 struct overmap_location;
 struct pathfinding_settings;
@@ -854,7 +850,6 @@ class npc : public Character
         nc_color basic_symbol_color() const override;
         int print_info( const catacurses::window &w, int line, int vLines, int column ) const override;
         std::string opinion_text() const;
-        int faction_display( const catacurses::window &fac_w, int width ) const;
         std::string describe_mission() const;
         std::string display_name( bool possessive = false ) const;
         std::string name_and_activity() const;

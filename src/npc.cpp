@@ -4045,6 +4045,25 @@ std::string npc::get_current_activity() const
     }
 }
 
+std::string npc::get_current_status() const
+{
+    if( current_target() != nullptr ) {
+        return _( "In Combat!" );
+    } else if( in_sleep_state() ) {
+        return _( "Sleeping" );
+    } else if( is_following() ) {
+        return _( "Following" );
+    } else if( is_leader() ) {
+        return _( "Leading" );
+    } else if( is_patrolling() ) {
+        return _( "Patrolling" );
+    } else if( is_guarding() ) {
+        return _( "Guarding" );
+    } else {
+        return get_current_activity();
+    }
+}
+
 void npc::update_missions_target( character_id old_character, character_id new_character )
 {
     for( ::mission *&temp : chatbin.missions_assigned ) {
