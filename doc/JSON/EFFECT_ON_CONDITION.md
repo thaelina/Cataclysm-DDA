@@ -1013,6 +1013,24 @@ check do you memorize `meat_hunk` recipe
 { "u_know_recipe": "meat_hunk" }
 ```
 
+### `u_has_item_with_flag`, `npc_has_item_with_flag`
+- type: string or [variable object](#variable-object)
+- return true if alpha or beta talker has any item with specific flag
+
+#### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ✔️ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+#### Examples
+
+check do you have anything with `RAD_DETECT` flag
+```jsonc
+{ "u_has_item_with_flag": "RAD_DETECT" }
+```
+
+
 ### `u_has_worn_with_flag`, `npc_has_worn_with_flag`
 - type: string or [variable object](#variable-object)
 - return true if alpha or beta talker wear some item with specific flag
