@@ -8517,6 +8517,7 @@ bool game::phasing_move( const tripoint_bub_ms &dest_loc, const bool via_ramp )
         u.grab( object_type::NONE );
         on_move_effects();
         here.creature_on_trap( u );
+        get_event_bus().send<event_type::phase_move>( tunneldist, true );
         return true;
     }
 
@@ -8581,6 +8582,8 @@ bool game::phasing_move_enchant( const tripoint_bub_ms &dest_loc, const int phas
         u.grab( object_type::NONE );
         on_move_effects();
         here.creature_on_trap( u );
+
+        get_event_bus().send<event_type::phase_move>( tunneldist, false );
         return true;
     }
 
