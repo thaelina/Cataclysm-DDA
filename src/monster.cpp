@@ -161,7 +161,6 @@ static const flag_id json_flag_DISABLE_FLIGHT( "DISABLE_FLIGHT" );
 static const flag_id json_flag_FILTHY( "FILTHY" );
 static const flag_id json_flag_GRAB( "GRAB" );
 static const flag_id json_flag_GRAB_FILTER( "GRAB_FILTER" );
-static const flag_id json_flag_PRESERVE_SPAWN_LOC( "PRESERVE_SPAWN_LOC" );
 
 static const itype_id itype_beartrap( "beartrap" );
 static const itype_id itype_milk( "milk" );
@@ -3290,7 +3289,7 @@ void monster::generate_inventory( bool disableDrops )
     no_extra_death_drops = disableDrops;
 }
 
-void monster::drop_items_on_death( map *here, item *corpse )
+void monster::drop_items_on_death( map *here, item *corpse ) const
 {
     if( is_hallucination() ) {
         return;
@@ -3305,6 +3304,7 @@ void monster::drop_items_on_death( map *here, item *corpse )
 
     for( item &e : new_items ) {
         e.randomize_rot();
+        e.preserve_location( pos_abs() );
     }
 
     // for non corpses this is much simpler
@@ -3353,25 +3353,6 @@ void monster::drop_items_on_death( map *here, item *corpse )
             }
         }
     }
-
-    // Check if item has PRESERVE_SPAWN_LOC and set it if necessary
-    // This probably needs to be encapsulated in some generic function
-    for( item &it : new_items ) {
-        if( it.has_flag( json_flag_PRESERVE_SPAWN_LOC ) &&
-            !it.has_var( "spawn_location" ) ) {
-            it.set_var( "spawn_location", pos_abs().to_string_writable() );
-        }
-
-        // since efiles are not in standard pocket, check it separately
-        if( it.has_pocket_type( pocket_type::E_FILE_STORAGE ) ) {
-            for( item *it_software : it.all_items_top( pocket_type::E_FILE_STORAGE ) ) {
-                if( it_software->has_flag( json_flag_PRESERVE_SPAWN_LOC ) &&
-                    !it_software->has_var( "spawn_location" ) ) {
-                    it_software->set_var( "spawn_location", pos_abs().to_string_writable() );
-                }
-            }
-        }
-    };
 }
 
 void monster::spawn_dissectables_on_death( item *corpse ) const
