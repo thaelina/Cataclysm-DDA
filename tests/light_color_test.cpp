@@ -1,3 +1,4 @@
+#include <string_view>
 #include <vector>
 
 #include "calendar.h"
@@ -27,10 +28,12 @@
 
 static const field_type_str_id field_fd_test_green_glow( "fd_test_green_glow" );
 static const ter_str_id ter_t_brick_wall( "t_brick_wall" );
+static const ter_str_id ter_t_door_o( "t_door_o" );
 static const ter_str_id ter_t_flat_roof( "t_flat_roof" );
 static const ter_str_id ter_t_floor( "t_floor" );
 static const ter_str_id ter_t_test_blue_light( "t_test_blue_light" );
 static const ter_str_id ter_t_test_red_light( "t_test_red_light" );
+static const ter_str_id ter_t_wall( "t_wall" );
 static const ter_str_id ter_test_t_utility_light( "test_t_utility_light" );
 static const vpart_id vpart_test_red_headlight( "test_red_headlight" );
 static const vproto_id vehicle_prototype_car( "car" );
@@ -770,4 +773,182 @@ TEST_CASE( "fused_arc_color_output_matches_golden_values", "[light_color]" )
     const float forward_r = cache.light_color_cache[hl_pos.x() + 4][hl_pos.y()].r;
     const float behind_r = cache.light_color_cache[hl_pos.x() - 2][hl_pos.y()].r;
     CHECK( forward_r > behind_r );
+}
+
+// --- Dawn/dusk tint (DDT) tests ---
+
+// Helper: set time and reset stale light caches before rebuilding lightmap.
+// rebuild_lightmap() alone does not call g->reset_light_level(), so
+// natural_light_level() would return stale cached values after a turn change.
+static void set_time_and_rebuild( const time_point &when, int zlev = 0 )
+{
+    calendar::turn = when;
+    g->reset_light_level();
+    get_player_character().recalc_sight_limits();
+    rebuild_lightmap( zlev );
+}
+
+TEST_CASE( "dawn_dusk_tint_on_outside_tiles", "[light_color][dawn_dusk]" )
+{
+    setup_dark_map();
+    scoped_weather_override weather_clear( WEATHER_CLEAR );
+
+    const time_point dawn = sunrise( calendar::turn_zero ) - 15_minutes;
+    set_time_and_rebuild( dawn );
+
+    const level_cache &cache = get_map().access_cache( 0 );
+    // Pick a few outside tiles near the player. After clear_map, z=0 is
+    // open ground so all tiles should receive full sunlight.
+    const tripoint_bub_ms center = get_player_character().pos_bub();
+    for( int dx = -3; dx <= 3; dx += 3 ) {
+        for( int dy = -3; dy <= 3; dy += 3 ) {
+            const point p( center.x() + dx, center.y() + dy );
+            CAPTURE( dx, dy );
+            const light_color_rgb &c = cache.light_color_cache[p.x][p.y];
+            CHECK( c.r > 0.0f );
+            // Warm hue: red > green > blue
+            CHECK( c.r > c.g );
+            CHECK( c.g > c.b );
+        }
+    }
+}
+
+TEST_CASE( "no_dawn_dusk_tint_at_midnight", "[light_color][dawn_dusk]" )
+{
+    setup_dark_map();
+    scoped_weather_override weather_clear( WEATHER_CLEAR );
+
+    set_time_and_rebuild( midnight );
+
+    const level_cache &cache = get_map().access_cache( 0 );
+    const tripoint_bub_ms center = get_player_character().pos_bub();
+    for( int d = -3; d <= 3; d += 3 ) {
+        const light_color_rgb &c = cache.light_color_cache[center.x() + d][center.y()];
+        CAPTURE( d );
+        CHECK_FALSE( c.is_colored() );
+    }
+}
+
+TEST_CASE( "no_dawn_dusk_tint_at_noon", "[light_color][dawn_dusk]" )
+{
+    setup_dark_map();
+    scoped_weather_override weather_clear( WEATHER_CLEAR );
+
+    const time_point noon = calendar::turn_zero + 12_hours;
+    set_time_and_rebuild( noon );
+
+    const level_cache &cache = get_map().access_cache( 0 );
+    const tripoint_bub_ms center = get_player_character().pos_bub();
+    for( int d = -3; d <= 3; d += 3 ) {
+        const light_color_rgb &c = cache.light_color_cache[center.x() + d][center.y()];
+        CAPTURE( d );
+        CHECK_FALSE( c.is_colored() );
+    }
+}
+
+TEST_CASE( "dawn_dusk_tint_blocked_by_roof", "[light_color][dawn_dusk]" )
+{
+    setup_dark_map();
+    scoped_weather_override weather_clear( WEATHER_CLEAR );
+
+    map &here = get_map();
+    const tripoint_bub_ms center = get_player_character().pos_bub();
+    // Build a sealed 5x5 walled box with roof, offset from player
+    const tripoint_bub_ms room_origin = center + tripoint( 8, 0, 0 );
+    for( int dx = 0; dx < 5; dx++ ) {
+        for( int dy = 0; dy < 5; dy++ ) {
+            const tripoint_bub_ms pos = room_origin + tripoint( dx, dy, 0 );
+            if( dx == 0 || dx == 4 || dy == 0 || dy == 4 ) {
+                here.ter_set( pos, ter_t_wall.id() );
+            } else {
+                here.ter_set( pos, ter_t_floor.id() );
+            }
+            here.ter_set( pos + tripoint::above, ter_t_flat_roof.id() );
+        }
+    }
+
+    const time_point dawn = sunrise( calendar::turn_zero ) - 15_minutes;
+    set_time_and_rebuild( dawn );
+
+    const level_cache &cache = here.access_cache( 0 );
+    // Interior tile (sealed room, under roof) should have no tint
+    const tripoint_bub_ms inside = room_origin + tripoint( 2, 2, 0 );
+    CHECK_FALSE( cache.light_color_cache[inside.x()][inside.y()].is_colored() );
+    // Outside tile far from room should have tint
+    CHECK( cache.light_color_cache[center.x()][center.y()].r > 0.0f );
+}
+
+TEST_CASE( "dawn_dusk_tint_penetrates_through_opening", "[light_color][dawn_dusk]" )
+{
+    setup_dark_map();
+    scoped_weather_override weather_clear( WEATHER_CLEAR );
+
+    map &here = get_map();
+    const tripoint_bub_ms center = get_player_character().pos_bub();
+    // Build a 7-tile east-west corridor: open west end, walled east end.
+    // Walls on north/south sides, flat roof above.
+    //
+    // Layout (y is north-south, x is east-west):
+    //   W W W W W W W W W
+    //   O . . . . . . . W    <- corridor, O = open door on west wall
+    //   W W W W W W W W W
+    const tripoint_bub_ms corridor_sw = center + tripoint( 6, -1, 0 );
+    constexpr int corridor_len = 9;
+    for( int dx = 0; dx < corridor_len; dx++ ) {
+        for( int dy = 0; dy < 3; dy++ ) {
+            const tripoint_bub_ms pos = corridor_sw + tripoint( dx, dy, 0 );
+            if( dy == 0 || dy == 2 || dx == corridor_len - 1 ) {
+                here.ter_set( pos, ter_t_wall.id() );
+            } else if( dx == 0 ) {
+                here.ter_set( pos, ter_t_door_o.id() );
+            } else {
+                here.ter_set( pos, ter_t_floor.id() );
+            }
+            // Roof above
+            here.ter_set( pos + tripoint::above, ter_t_flat_roof.id() );
+        }
+    }
+
+    const time_point dawn = sunrise( calendar::turn_zero ) - 15_minutes;
+    set_time_and_rebuild( dawn );
+
+    const level_cache &cache = here.access_cache( 0 );
+    // Corridor interior at y=corridor_sw.y()+1 (the middle row)
+    const int cy = corridor_sw.y() + 1;
+    const int x_open = corridor_sw.x();       // open door
+    const int x_near = corridor_sw.x() + 2;   // 2 tiles inside
+    const int x_deep = corridor_sw.x() + 5;   // 5 tiles inside
+
+    const float r_open = cache.light_color_cache[x_open][cy].r;
+    const float r_near = cache.light_color_cache[x_near][cy].r;
+    const float r_deep = cache.light_color_cache[x_deep][cy].r;
+
+    CAPTURE( r_open, r_near, r_deep );
+
+    // Opening tile must be tinted
+    CHECK( r_open > 0.0f );
+    // Near-inside tile must still have tint (directional ray cast)
+    CHECK( r_near > 0.0f );
+    // Gradient: opening brighter than deep inside
+    CHECK( r_open > r_deep );
+}
+
+TEST_CASE( "no_dawn_dusk_tint_in_alternate_dimension", "[light_color][dawn_dusk]" )
+{
+    setup_dark_map();
+    scoped_weather_override weather_clear( WEATHER_CLEAR );
+
+    // Set time to twilight so cached_twilight_color() returns a colored value
+    const time_point dawn = sunrise( calendar::turn_zero ) - 15_minutes;
+    calendar::turn = dawn;
+    g->reset_light_level();
+
+    // Default dimension: should produce tint
+    const light_color_rgb default_dim = dawn_dusk_color_for_lightmap( "" );
+    CHECK( default_dim.is_colored() );
+    CHECK( default_dim.r > 0.0f );
+
+    // Alternate dimension: no tint
+    const light_color_rgb nether = dawn_dusk_color_for_lightmap( "nether" );
+    CHECK_FALSE( nether.is_colored() );
 }
