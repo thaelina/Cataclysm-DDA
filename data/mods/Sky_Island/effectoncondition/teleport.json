@@ -12,12 +12,22 @@
       { "run_eocs": [ "EOC_raid_challenge_mode_pre_raid" ] },
       { "u_location_variable": { "global_val": "OM_HQ_origin" } },
       { "u_location_variable": { "global_val": "OM_HQ_origin_npc" } },
-      { "u_run_npc_eocs": [ "EOC_SKY_ISLAND_DIMENSION_SHIFT_CHARACTER_EFFECTS" ], "npc_range": 10, "local": true },
+      {
+        "if": { "math": [ "si_npcs_will_join_raid == 1" ] },
+        "then": { "u_run_npc_eocs": [ "EOC_SKY_ISLAND_DIMENSION_SHIFT_CHARACTER_EFFECTS" ], "npc_range": 10, "local": true }
+      },
       { "run_eocs": [ "EOC_SKY_ISLAND_DIMENSION_SHIFT_CHARACTER_EFFECTS" ] },
       {
-        "u_travel_to_dimension": "dimension_sky_island_mission",
-        "npc_travel_radius": 10,
-        "region_type": { "global_val": "sky_island_target_region_settings" }
+        "if": { "math": [ "si_npcs_will_join_raid == 1" ] },
+        "then": {
+          "u_travel_to_dimension": "dimension_sky_island_mission",
+          "npc_travel_radius": 10,
+          "region_type": { "global_val": "sky_island_target_region_settings" }
+        },
+        "else": {
+          "u_travel_to_dimension": "dimension_sky_island_mission",
+          "region_type": { "global_val": "sky_island_target_region_settings" }
+        }
       }
     ]
   },
