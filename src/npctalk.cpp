@@ -82,6 +82,7 @@
 #include "item_location.h"
 #include "itype.h"
 #include "kill_tracker.h"
+#include "localized_comparator.h"
 #include "magic.h"
 #include "magic_teleporter_list.h"
 #include "map.h"
@@ -1424,6 +1425,9 @@ void game::chat( const std::optional<tripoint_bub_ms> &p )
                 npcs_selected.push_back( 0 );
             } else {
                 std::vector<Character *> clist( available_for_activities.begin(), available_for_activities.end() );
+                std::sort( clist.begin(), clist.end(), []( const Character * a, const Character * b ) {
+                    return localized_compare( a->get_name(), b->get_name() );
+                } );
                 npcs_selected = npcs_select_menu( clist, _( "Who should we assign?" ), nullptr );
             }
 
