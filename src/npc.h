@@ -556,6 +556,9 @@ struct npc_short_term_cache {
     std::vector<weak_ptr_fast<Creature>> friends;
     std::vector<sphere> dangerous_explosives;
     std::map<direction, float> threat_map;
+    // BT goal commitment: persists across turns until completed or
+    // overridden by a higher-priority goal. Empty = no commitment.
+    std::string committed_goal;
     // Cache of locations the NPC has searched recently in npc::find_item()
     lru_cache<tripoint_abs_ms, int> searched_tiles;
     // returns the value of the distance between a friendly creature and the closest enemy to that
@@ -942,6 +945,16 @@ class npc : public Character
         time_point restock_time() const;
         std::string get_restock_interval() const;
         bool is_shopkeeper() const;
+        // Return the NPC who should actually handle trade for this NPC.
+        // Default: self. Intercom operators delegate to the supply clerk.
+        npc &get_trade_delegate();
+        // Reconcile shift-based schedule state. Wakes sleeping NPCs at
+        // shift start, floors sleepiness off-shift for !needs_food() NPCs.
+        // Called from npc_update_body() (in-bubble) and on_load() (off-bubble).
+        void reconcile_schedule();
+        // reconcile_schedule() plus coarse sleepiness correction for
+        // !needs_food() NPCs based on shift position. For on_load() only.
+        void reconcile_schedule_on_load();
         // Use and assessment of items
         // The minimum value to want to pick up an item
         int minimum_item_value() const;
@@ -1384,6 +1397,12 @@ class npc : public Character
         std::optional<tripoint_abs_ms> get_ai_guard_pos() const {
             return ai_cache.guard_pos;
         }
+        const std::string &get_committed_goal() const {
+            return ai_cache.committed_goal;
+        }
+        void set_committed_goal( const std::string &goal ) {
+            ai_cache.committed_goal = goal;
+        }
         // Effective guard position: ai_cache (ephemeral, from sound investigation)
         // falls back to persistent guard_pos (from mission/dialogue assignment).
         std::optional<tripoint_abs_ms> get_effective_guard_pos() const {
@@ -1391,6 +1410,14 @@ class npc : public Character
                 return ai_cache.guard_pos;
             }
             return guard_pos;
+        }
+        void clear_ai_guard_pos() {
+            ai_cache.guard_pos = std::nullopt;
+        }
+        // Set cache guard_pos without touching persistent guard_pos.
+        // Used for temporary anchors like sound investigation targets.
+        void set_ai_guard_pos( const tripoint_abs_ms &p ) {
+            ai_cache.guard_pos = p;
         }
         void push_ai_sound_alert( const tripoint_abs_ms &pos, sounds::sound_t type, int vol ) {
             ai_cache.sound_alerts.push_back( { pos, type, vol } );
