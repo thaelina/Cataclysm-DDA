@@ -226,7 +226,9 @@ class avatar : public Character
 
         // Dialogue and bartering--see npctalk.cpp
         void talk_to( std::unique_ptr<talker> talk_with, bool radio_contact = false,
-                      bool is_computer = false, bool is_not_conversation = false, const std::string &debug_topic = "" );
+                      bool is_computer = false, bool is_not_conversation = false,
+                      const std::string &debug_topic = "",
+                      const std::string &remote_name = "" );
 
         /**
          * Try to disarm the NPC. May result in fail attempt, you receiving the weapon and instantly wielding it,
@@ -308,6 +310,9 @@ class avatar : public Character
 
         // Set in npc::talk_to_you for use in further NPC interactions
         bool dialogue_by_radio = false;
+        // When set, overrides the NPC display name in dialogue and trade
+        // windows (e.g. "the intercom" for remote intercom conversations).
+        std::string dialogue_remote_name;
         // Preferred aim mode - ranged.cpp aim mode defaults to this if possible
         std::string preferred_aiming_mode;
 
