@@ -262,6 +262,12 @@ const char *category_name( decision_category cat )
             return "order";
         case decision_category::duty:
             return "duty";
+        case decision_category::camp_work:
+            return "camp_work";
+        case decision_category::camp_travel:
+            return "camp_travel";
+        case decision_category::free_time:
+            return "free_time";
         case decision_category::idle:
             return "idle";
         case decision_category::unmodeled:
@@ -290,6 +296,15 @@ decision_category bt_goal_to_category( const std::string &goal )
     }
     if( goal == "return_to_guard_pos" || goal == "hold_position" ) {
         return decision_category::duty;
+    }
+    if( goal == "camp_work" ) {
+        return decision_category::camp_work;
+    }
+    if( goal == "return_to_camp" ) {
+        return decision_category::camp_travel;
+    }
+    if( goal == "free_time" ) {
+        return decision_category::free_time;
     }
     if( goal == "idle" ) {
         return decision_category::idle;
@@ -1402,7 +1417,8 @@ void npc::regen_ai_cache()
     map &here = get_map();
     auto i = std::begin( ai_cache.sound_alerts );
     creature_tracker &creatures = get_creature_tracker();
-    if( has_trait( trait_RETURN_TO_START_POS ) ) {
+    if( has_trait( trait_RETURN_TO_START_POS ) &&
+        mission != NPC_MISSION_CAMP_RESIDENT ) {
         if( !guard_pos ) {
             guard_pos = pos_abs();
         }
@@ -1695,6 +1711,12 @@ void npc::move()
                     if( !completed_goal ) {
                         completed_goal = ( new_goal != "goto_ordered_position" );
                     }
+                } else if( committed == "camp_work" ) {
+                    completed_goal = ( new_goal != "camp_work" );
+                } else if( committed == "return_to_camp" ) {
+                    completed_goal = ( new_goal != "return_to_camp" );
+                } else if( committed == "free_time" ) {
+                    completed_goal = ( new_goal != "free_time" );
                 }
                 if( completed_goal ) {
                     committed.clear();
@@ -1724,6 +1746,24 @@ void npc::move()
                 action = npc_goto_to_this_pos;
             } else if( new_goal == "hold_position" ) {
                 action = address_needs( NPC_DANGER_VERY_LOW + 1 );
+            } else if( new_goal == "camp_work" ) {
+                last_job_scan = calendar::turn;
+                if( find_job_to_perform() ) {
+                    action = npc_player_activity;
+                } else {
+                    action = npc_worker_downtime;
+                }
+            } else if( new_goal == "return_to_camp" ) {
+                if( assigned_camp ) {
+                    goal = *assigned_camp;
+                    tripoint_abs_omt surface = pos_abs_omt();
+                    surface.z() = 0;
+                    omt_path = overmap_buffer.get_travel_path( surface, *assigned_camp,
+                               overmap_path_params::for_npc() ).points;
+                }
+                action = npc_goto_destination;
+            } else if( new_goal == "free_time" ) {
+                action = npc_worker_downtime;
             } else if( new_goal == "idle" ) {
                 if( guard_pos ) {
                     // Persistent duty post: stay put, tend minor needs.
@@ -1810,7 +1850,8 @@ void npc::move()
                 mission = NPC_MISSION_NULL;
             }
         }
-        if( assigned_camp && attitude != NPCATT_ACTIVITY ) {
+        if( assigned_camp && mission != NPC_MISSION_CAMP_RESIDENT &&
+            !guard_pos && attitude != NPCATT_ACTIVITY ) {
             if( has_job() && calendar::once_every( 10_minutes ) && find_job_to_perform() ) {
                 action = npc_player_activity;
             } else {
@@ -5527,7 +5568,13 @@ void npc::go_to_omt_destination()
         point_rel_omt omt_diff = omt_path.back().xy() - omt_pos.xy();
         if( omt_diff.x() > 3 || omt_diff.x() < -3 || omt_diff.y() > 3 || omt_diff.y() < -3 ) {
             // we've gone wandering somehow, reset destination.
-            if( !is_player_ally() ) {
+            if( mission == NPC_MISSION_CAMP_RESIDENT && assigned_camp ) {
+                goal = *assigned_camp;
+                tripoint_abs_omt surface = pos_abs_omt();
+                surface.z() = 0;
+                omt_path = overmap_buffer.get_travel_path( surface, *assigned_camp,
+                           overmap_path_params::for_npc() ).points;
+            } else if( !is_player_ally() ) {
                 set_omt_destination();
             } else {
                 talk_function::assign_guard( *this );

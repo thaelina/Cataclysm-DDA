@@ -29,6 +29,7 @@
 #include "map.h"
 #include "map_helpers.h"
 #include "map_iterator.h"
+#include "map_scale_constants.h"
 #include "mapdata.h"
 #include "mapgen.h"
 #include "mapgendata.h"
@@ -77,6 +78,7 @@ static const ter_str_id ter_t_ponywall( "t_ponywall" );
 static const ter_str_id ter_t_wall( "t_wall" );
 
 static const trait_id trait_IGNORE_SOUND( "IGNORE_SOUND" );
+static const trait_id trait_RETURN_TO_START_POS( "RETURN_TO_START_POS" );
 
 namespace behavior
 {
@@ -1621,4 +1623,86 @@ TEST_CASE( "bt_priority_matrix", "[npc][behavior]" )
         CHECK( bt_goal( guy ) != "follow_player" );
         get_player_character().in_vehicle = false;
     }
+    SECTION( "camp resident idle: free_time" ) {
+        guy.set_mission( NPC_MISSION_CAMP_RESIDENT );
+        guy.assigned_camp = project_to<coords::omt>( guy.pos_abs() );
+        guy.guard_pos = std::nullopt;
+        guy.clear_ai_guard_pos();
+        CHECK( bt_goal( guy ) == "free_time" );
+    }
+}
+
+// --- Camp resident state split tests ---
+
+TEST_CASE( "duty_predicates_skip_camp_residents", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    get_map();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_mission( NPC_MISSION_CAMP_RESIDENT );
+    guy.assigned_camp = project_to<coords::omt>( guy.pos_abs() );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    calendar::turn = calendar::turn_zero + 12_hours;
+
+    behavior::character_oracle_t oracle( &guy );
+
+    SECTION( "RETURN_TO_START_POS suppressed" ) {
+        guy.set_mutation( trait_RETURN_TO_START_POS );
+        guy.regen_ai_cache();
+        CHECK_FALSE( guy.get_guard_post().has_value() );
+    }
+    SECTION( "on_shift fails" ) {
+        CHECK( oracle.on_shift( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "duty_urgency is 0" ) {
+        CHECK( oracle.duty_urgency( "" ) == 0.0f );
+    }
+    SECTION( "displaced_from_post fails" ) {
+        CHECK( oracle.displaced_from_post( "" ) == behavior::status_t::failure );
+    }
+}
+
+TEST_CASE( "bt_camp_resident_goals", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_mission( NPC_MISSION_CAMP_RESIDENT );
+    guy.assigned_camp = project_to<coords::omt>( guy.pos_abs() );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+
+    SECTION( "idle at camp: free_time" ) {
+        CHECK( bt_goal( guy ) == "free_time" );
+    }
+    SECTION( "on activity: not free_time" ) {
+        guy.set_attitude( NPCATT_ACTIVITY );
+        CHECK( bt_goal( guy ) != "free_time" );
+    }
+    SECTION( "away from camp: return_to_camp" ) {
+        guy.setpos( here, tripoint_bub_ms( 50 + SEEX * 2, 50, 0 ) );
+        REQUIRE( guy.pos_abs_omt() != *guy.assigned_camp );
+        CHECK( bt_goal( guy ) == "return_to_camp" );
+    }
+    SECTION( "severe thirst beats free_time" ) {
+        guy.set_thirst( 900 );
+        guy.i_add( item( itype_orange ) );
+        behavior::character_oracle_t oracle( &guy );
+        REQUIRE( oracle.has_water( "" ) == behavior::status_t::running );
+        CHECK( bt_goal( guy ) == "drink_water" );
+    }
+}
+
+TEST_CASE( "bt_goal_category_mapping_camp", "[npc][behavior]" )
+{
+    CHECK( bt_goal_to_category( "camp_work" ) == decision_category::camp_work );
+    CHECK( bt_goal_to_category( "free_time" ) == decision_category::free_time );
+    CHECK( bt_goal_to_category( "return_to_camp" ) == decision_category::camp_travel );
 }

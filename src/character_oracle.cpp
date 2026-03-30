@@ -362,4 +362,79 @@ float character_oracle_t::npc_goto_order_urgency( std::string_view ) const
     return 0.65f;
 }
 
+status_t character_oracle_t::has_camp_job( std::string_view ) const
+{
+    const npc *n = dynamic_cast<const npc *>( subject );
+    if( !n || !n->assigned_camp || n->mission != NPC_MISSION_CAMP_RESIDENT ) {
+        return status_t::failure;
+    }
+    if( n->pos_abs_omt() != *n->assigned_camp ) {
+        return status_t::failure;
+    }
+    if( !n->has_job() ) {
+        return status_t::failure;
+    }
+    if( calendar::turn - n->last_job_scan < 10_minutes ) {
+        return status_t::failure;
+    }
+    return status_t::running;
+}
+
+status_t character_oracle_t::is_away_from_camp( std::string_view ) const
+{
+    const npc *n = dynamic_cast<const npc *>( subject );
+    if( !n || !n->assigned_camp || n->mission != NPC_MISSION_CAMP_RESIDENT ) {
+        return status_t::failure;
+    }
+    return n->pos_abs_omt() != *n->assigned_camp
+           ? status_t::running : status_t::failure;
+}
+
+status_t character_oracle_t::is_camp_idle( std::string_view ) const
+{
+    const npc *n = dynamic_cast<const npc *>( subject );
+    if( !n || !n->assigned_camp || n->mission != NPC_MISSION_CAMP_RESIDENT ) {
+        return status_t::failure;
+    }
+    if( n->get_attitude() == NPCATT_ACTIVITY ) {
+        return status_t::failure;
+    }
+    if( n->pos_abs_omt() != *n->assigned_camp ) {
+        return status_t::failure;
+    }
+    return status_t::running;
+}
+
+float character_oracle_t::camp_work_urgency( std::string_view ) const
+{
+    const npc *n = dynamic_cast<const npc *>( subject );
+    if( !n || !n->assigned_camp || n->mission != NPC_MISSION_CAMP_RESIDENT
+        || n->pos_abs_omt() != *n->assigned_camp || !n->has_job() ) {
+        return 0.0f;
+    }
+    return 0.4f;
+}
+
+float character_oracle_t::return_to_camp_urgency( std::string_view ) const
+{
+    const npc *n = dynamic_cast<const npc *>( subject );
+    if( !n || !n->assigned_camp || n->mission != NPC_MISSION_CAMP_RESIDENT
+        || n->pos_abs_omt() == *n->assigned_camp ) {
+        return 0.0f;
+    }
+    // Below follow max (0.6), above duty (0.45).
+    return 0.5f;
+}
+
+float character_oracle_t::free_time_urgency( std::string_view ) const
+{
+    const npc *n = dynamic_cast<const npc *>( subject );
+    if( !n || !n->assigned_camp || n->mission != NPC_MISSION_CAMP_RESIDENT
+        || n->get_attitude() == NPCATT_ACTIVITY
+        || n->pos_abs_omt() != *n->assigned_camp ) {
+        return 0.0f;
+    }
+    return 0.35f;
+}
+
 } // namespace behavior

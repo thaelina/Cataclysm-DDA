@@ -4198,3 +4198,177 @@ TEST_CASE( "leader_npc_waits_when_player_far", "[npc][behavior]" )
     CHECK( guy.get_committed_goal() != "follow_player" );
     CHECK( guy.has_effect( effect_catch_up ) );
 }
+
+// --- Camp resident state split tests ---
+
+TEST_CASE( "camp_resident_is_not_guarding", "[npc][camp]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    get_map();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_mission( NPC_MISSION_CAMP_RESIDENT );
+
+    SECTION( "not guarding" ) {
+        CHECK_FALSE( guy.is_guarding() );
+    }
+    SECTION( "is player ally" ) {
+        CHECK( guy.is_player_ally() );
+    }
+    SECTION( "not stationary" ) {
+        CHECK_FALSE( guy.is_stationary( true ) );
+    }
+    SECTION( "describe_mission" ) {
+        CHECK( guy.describe_mission().find( "guarding" ) == std::string::npos );
+    }
+}
+
+TEST_CASE( "camp_resident_does_not_oscillate", "[npc][camp]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    get_player_character().setpos( here, tripoint_bub_ms( 50, 50, 0 ) );
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_NULL );
+    guy.set_mission( NPC_MISSION_CAMP_RESIDENT );
+    guy.assigned_camp = project_to<coords::omt>( guy.pos_abs() );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.regen_ai_cache();
+
+    for( int i = 0; i < 10; ++i ) {
+        guy.set_moves( 100 );
+        guy.move();
+        CHECK( guy.get_committed_goal() != "return_to_guard_pos" );
+    }
+}
+
+TEST_CASE( "camp_resident_guard_transitions", "[npc][camp]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_mission( NPC_MISSION_CAMP_RESIDENT );
+    const tripoint_abs_omt camp_pos = project_to<coords::omt>( guy.pos_abs() );
+    guy.assigned_camp = camp_pos;
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+
+    SECTION( "assign_guard overrides to GUARD_ALLY" ) {
+        talk_function::assign_guard( guy );
+        CHECK( guy.mission == NPC_MISSION_GUARD_ALLY );
+        CHECK( guy.assigned_camp.has_value() );
+        CHECK( guy.get_guard_post().has_value() );
+    }
+    SECTION( "return_to_camp_duties at camp: no travel" ) {
+        talk_function::assign_guard( guy );
+        talk_function::return_to_camp_duties( guy );
+        CHECK( guy.mission == NPC_MISSION_CAMP_RESIDENT );
+        CHECK( guy.assigned_camp == camp_pos );
+        CHECK_FALSE( guy.get_guard_post().has_value() );
+        CHECK( guy.goal == npc::no_goal_point );
+        CHECK( guy.omt_path.empty() );
+    }
+    SECTION( "return_to_camp_duties away from camp: sets goal" ) {
+        guy.setpos( here, tripoint_bub_ms( 50 + SEEX * 2, 50, 0 ) );
+        REQUIRE( guy.pos_abs_omt() != camp_pos );
+        talk_function::assign_guard( guy );
+        talk_function::return_to_camp_duties( guy );
+        CHECK( guy.mission == NPC_MISSION_CAMP_RESIDENT );
+        CHECK( guy.goal == camp_pos );
+        // omt_path may be empty if overmap pathfinding has no data,
+        // but goal is set so the NPC will path on next move().
+    }
+    SECTION( "stop_guard recalls but preserves camp" ) {
+        talk_function::assign_guard( guy );
+        talk_function::stop_guard( guy );
+        CHECK( guy.mission == NPC_MISSION_NULL );
+        // Camp assignment preserved so player can send NPC back later.
+        CHECK( guy.assigned_camp == camp_pos );
+    }
+    SECTION( "return_to_camp_duties clears stale movement state" ) {
+        talk_function::assign_guard( guy );
+        guy.chair_pos = guy.pos_abs() + tripoint( 3, 0, 0 );
+        guy.wander_pos = guy.pos_abs() + tripoint( -2, 0, 0 );
+        guy.path.push_back( here.get_bub( tripoint_abs_ms( 55, 50, 0 ) ) );
+
+        talk_function::return_to_camp_duties( guy );
+        CHECK_FALSE( guy.chair_pos.has_value() );
+        CHECK_FALSE( guy.wander_pos.has_value() );
+        CHECK( guy.path.empty() );
+    }
+    SECTION( "transitions clear stale committed goal" ) {
+        talk_function::assign_guard( guy );
+        guy.set_committed_goal( "hold_position" );
+        talk_function::return_to_camp_duties( guy );
+        CHECK( guy.get_committed_goal().empty() );
+
+        talk_function::assign_guard( guy );
+        CHECK( guy.get_committed_goal().empty() );
+    }
+}
+
+TEST_CASE( "on_load_migrates_legacy_camp_npcs", "[npc][camp]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+
+    SECTION( "GUARD_ALLY + assigned_camp migrates to CAMP_RESIDENT" ) {
+        guy.set_mission( NPC_MISSION_GUARD_ALLY );
+        guy.assigned_camp = project_to<coords::omt>( guy.pos_abs() );
+        guy.set_guard_pos( guy.pos_abs() );
+        guy.on_load( &here );
+        CHECK( guy.mission == NPC_MISSION_CAMP_RESIDENT );
+        CHECK_FALSE( guy.get_guard_post().has_value() );
+        CHECK( guy.assigned_camp.has_value() );
+    }
+    SECTION( "migration clears stale movement state" ) {
+        guy.set_mission( NPC_MISSION_GUARD_ALLY );
+        guy.assigned_camp = project_to<coords::omt>( guy.pos_abs() );
+        guy.set_guard_pos( guy.pos_abs() );
+        guy.goal = project_to<coords::omt>( guy.pos_abs() + tripoint( 10 * SEEX, 0, 0 ) );
+        guy.omt_path.push_back( guy.goal );
+        guy.path.push_back( here.get_bub( tripoint_abs_ms( 55, 50, 0 ) ) );
+        guy.set_committed_goal( "return_to_guard_pos" );
+        guy.on_load( &here );
+        CHECK( guy.mission == NPC_MISSION_CAMP_RESIDENT );
+        CHECK( guy.goal == npc::no_goal_point );
+        CHECK( guy.omt_path.empty() );
+        CHECK( guy.path.empty() );
+        CHECK( guy.get_committed_goal().empty() );
+    }
+    SECTION( "migration fixes previous_mission for active workers" ) {
+        guy.set_mission( NPC_MISSION_ACTIVITY );
+        guy.previous_mission = NPC_MISSION_GUARD_ALLY;
+        guy.assigned_camp = project_to<coords::omt>( guy.pos_abs() );
+        guy.set_guard_pos( guy.pos_abs() );
+        guy.on_load( &here );
+        CHECK( guy.mission == NPC_MISSION_ACTIVITY );
+        CHECK( guy.previous_mission == NPC_MISSION_CAMP_RESIDENT );
+    }
+    SECTION( "GUARD_ALLY without assigned_camp does not migrate" ) {
+        guy.set_mission( NPC_MISSION_GUARD_ALLY );
+        guy.assigned_camp = std::nullopt;
+        guy.set_guard_pos( guy.pos_abs() );
+        guy.on_load( &here );
+        CHECK( guy.mission == NPC_MISSION_GUARD_ALLY );
+    }
+}

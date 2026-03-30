@@ -8,7 +8,7 @@
 // Used by the top-level npc_decision behavior tree to compare
 // BT goal selection against the legacy npc::move() cascade.
 enum class decision_category : int {
-    combat, investigate, needs, follow, order, duty, idle, unmodeled
+    combat, investigate, needs, follow, order, duty, camp_work, camp_travel, free_time, idle, unmodeled
 };
 
 const char *category_name( decision_category cat );

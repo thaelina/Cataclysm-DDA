@@ -2627,7 +2627,7 @@ bool npc::is_ally( const Character &p ) const
             if( attitude == NPCATT_FOLLOW || attitude == NPCATT_LEAD ||
                 attitude == NPCATT_WAIT || mission == NPC_MISSION_ACTIVITY ||
                 mission == NPC_MISSION_TRAVELLING || mission == NPC_MISSION_GUARD_ALLY ||
-                has_companion_mission() ) {
+                mission == NPC_MISSION_CAMP_RESIDENT || has_companion_mission() ) {
                 return true;
             }
         }
@@ -3497,6 +3497,33 @@ void npc::on_load( map *here )
         hallucination = true;
     }
     effect_on_conditions::load_existing_character( *this );
+
+    // Migrate legacy camp assignees from GUARD_ALLY to CAMP_RESIDENT.
+    const bool migrate_current =
+        mission == NPC_MISSION_GUARD_ALLY && assigned_camp;
+    const bool migrate_previous =
+        previous_mission == NPC_MISSION_GUARD_ALLY && assigned_camp;
+    if( migrate_current || migrate_previous ) {
+        if( migrate_current ) {
+            mission = NPC_MISSION_CAMP_RESIDENT;
+        }
+        if( migrate_previous ) {
+            previous_mission = NPC_MISSION_CAMP_RESIDENT;
+        }
+        guard_pos = std::nullopt;
+        clear_ai_guard_pos();
+        if( mission != NPC_MISSION_ACTIVITY ) {
+            goal = no_goal_point;
+            omt_path.clear();
+            path.clear();
+            chair_pos = std::nullopt;
+            wander_pos = std::nullopt;
+            clear_destination();
+            set_committed_goal( "" );
+            chatbin.first_topic = "TALK_FRIEND_CAMP_RESIDENT";
+        }
+    }
+
     reconcile_schedule_on_load();
     shop_restock();
 }
@@ -4106,6 +4133,9 @@ std::string npc::describe_mission() const
         case NPC_MISSION_ACTIVITY:
             return string_format( _( "Right now, I'm <current_activity>.  In general, %s" ),
                                   myclass.obj().get_job_description() );
+        case NPC_MISSION_CAMP_RESIDENT:
+            return string_format( _( "I'm working at the camp.  Overall, %s" ),
+                                  myclass.obj().get_job_description() );
         case NPC_MISSION_TRAVELLING:
         case NPC_MISSION_NULL:
             return myclass.obj().get_job_description();
@@ -4162,6 +4192,8 @@ std::string npc::get_current_status() const
         return _( "Leading" );
     } else if( is_patrolling() ) {
         return _( "Patrolling" );
+    } else if( mission == NPC_MISSION_CAMP_RESIDENT ) {
+        return _( "At camp" );
     } else if( is_guarding() ) {
         return _( "Guarding" );
     } else {
