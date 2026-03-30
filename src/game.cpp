@@ -9687,6 +9687,7 @@ bool game::travel_to_dimension( const std::string &new_prefix,
                                 const std::string &region_type,
                                 const std::vector<npc *> &npc_travellers,
                                 const std::vector<item_location> &item_travellers,
+                                const std::optional<tripoint_bub_ms> item_travellers_location,
                                 vehicle *veh )
 {
     map &here = get_map();
@@ -9797,8 +9798,17 @@ bool game::travel_to_dimension( const std::string &new_prefix,
         here.board_vehicle( player.pos_bub(), &player );
         player.controlling_vehicle = controlling_vehicle;
     }
-    for( item it : place_items ) {
-        here.add_item_or_charges( player.pos_bub( here ), it );
+    if( !place_items.empty() ) {
+        tripoint_bub_ms item_center;
+        if( item_travellers_location ) {
+            item_center = *item_travellers_location;
+        } else {
+            item_center = player.pos_bub( here );
+        }
+
+        for( const item &it : place_items ) {
+            here.add_item_or_charges( item_center, it );
+        }
     }
     load_npcs();
     // Handle static monsters
@@ -9808,7 +9818,8 @@ bool game::travel_to_dimension( const std::string &new_prefix,
     weather.set_nextweather( calendar::turn );
     update_overmap_seen();
     if( undo_shift ) {
-        travel_to_dimension( old_prefix, region_type, npc_travellers, item_travellers, veh );
+        travel_to_dimension( old_prefix, region_type, npc_travellers, item_travellers,
+                             item_travellers_location, veh );
     }
     game::mon_info_update();
     get_event_bus().send<event_type::dimension_travel>( player.getID(), old_prefix, dimension_prefix );

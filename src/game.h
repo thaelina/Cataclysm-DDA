@@ -341,6 +341,7 @@ class game
         bool travel_to_dimension( const std::string &prefix, const std::string &region_type,
                                   const std::vector<npc *> &npc_travellers,
                                   const std::vector<item_location> &item_travellers,
+                                  std::optional<tripoint_bub_ms> item_travellers_location,
                                   vehicle *veh = nullptr );
         /**
          * Retrieve the identifier of the current dimension.

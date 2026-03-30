@@ -7922,7 +7922,11 @@ talk_effect_fun_t::func f_travel_to_dimension( const JsonObject &jo, std::string
     bool take_vehicle = false;;
     optional( jo, false, "take_vehicle", take_vehicle );
 
-    return [fail_message, success_message, dimension_prefix, npc_travel_filter,
+    std::optional<var_info> target_location;
+    optional( jo, false, "target_location", target_location );
+
+
+    return [fail_message, success_message, dimension_prefix, npc_travel_filter, target_location,
                   npc_travel_radius, item_travel_radius, region_type_var, take_vehicle]( dialogue const & d ) {
         Creature *teleporter = d.actor( false )->get_creature();
         if( teleporter ) {
@@ -7954,9 +7958,14 @@ talk_effect_fun_t::func f_travel_to_dimension( const JsonObject &jo, std::string
 
                 int item_radius = item_travel_radius.evaluate( d );
                 std::vector<item_location> items;
+                tripoint_bub_ms center;
                 if( item_radius > 0 ) {
                     map &here = get_map();
-                    tripoint_bub_ms center = here.get_bub( teleporter->pos_abs() );
+                    if( target_location ) {
+                        center = here.get_bub( read_var_value( *target_location, d ).tripoint() );
+                    } else {
+                        center = here.get_bub( teleporter->pos_abs() );
+                    }
                     for( const tripoint_bub_ms &pos : here.points_in_radius( center, item_radius ) ) {
                         for( item &it : here.i_at( pos ) ) {
                             items.emplace_back( map_cursor( pos ), &it );
@@ -7973,7 +7982,7 @@ talk_effect_fun_t::func f_travel_to_dimension( const JsonObject &jo, std::string
                     veh = &vp_here->vehicle();
                 }
                 // returns False if fail
-                if( g->travel_to_dimension( prefix, region_type, travellers, items, veh ) ) {
+                if( g->travel_to_dimension( prefix, region_type, travellers, items, center, veh ) ) {
                     teleporter->add_msg_if_player( success_message.evaluate( d ) );
                 } else {
                     teleporter->add_msg_if_player( fail_message.evaluate( d ) );

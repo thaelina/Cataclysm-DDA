@@ -45,6 +45,11 @@ Travel to dimension `test`, take any item within 3 tiles of your avatar with you
 { "u_travel_to_dimension": "test", "item_travel_radius": 3 }
 ```
 
+If you pass a location variable in `target_location`, the function will use that as the center for where to get items from and where to place items after the shift. Essentially this picks up items from and places them in then same location relative to the player.  
+```jsonc
+{ "u_travel_to_dimension": "test", "item_travel_radius": 3, "region_type": "default", "target_location": { "u_val": "debug_loc" } }
+```
+
 ## Region Settings
 
 When generating a new dimension, you have the option to supply a [region_settings](REGION_SETTINGS.md) object which the dimension will use to generate it's terrain.
