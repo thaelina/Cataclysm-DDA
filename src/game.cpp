@@ -9798,14 +9798,8 @@ bool game::travel_to_dimension( const std::string &new_prefix,
         here.board_vehicle( player.pos_bub(), &player );
         player.controlling_vehicle = controlling_vehicle;
     }
-    if( !place_items.empty() ) {
-        tripoint_bub_ms item_center;
-        if( item_travellers_location ) {
-            item_center = *item_travellers_location;
-        } else {
-            item_center = player.pos_bub( here );
-        }
-
+    if( !place_items.empty() && !undo_shift ) {
+        tripoint_bub_ms item_center = item_travellers_location.value_or( player.pos_bub( here ) );
         for( const item &it : place_items ) {
             here.add_item_or_charges( item_center, it );
         }
@@ -9818,8 +9812,13 @@ bool game::travel_to_dimension( const std::string &new_prefix,
     weather.set_nextweather( calendar::turn );
     update_overmap_seen();
     if( undo_shift ) {
-        travel_to_dimension( old_prefix, region_type, npc_travellers, item_travellers,
-                             item_travellers_location, veh );
+        travel_to_dimension( old_prefix, region_type, npc_travellers, {}, std::nullopt, veh );
+        if( !place_items.empty() ) {
+            tripoint_bub_ms item_center = item_travellers_location.value_or( player.pos_bub( here ) );
+            for( const item &it : place_items ) {
+                here.add_item_or_charges( item_center, it );
+            }
+        }
     }
     game::mon_info_update();
     get_event_bus().send<event_type::dimension_travel>( player.getID(), old_prefix, dimension_prefix );

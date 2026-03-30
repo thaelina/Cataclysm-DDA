@@ -7919,7 +7919,7 @@ talk_effect_fun_t::func f_travel_to_dimension( const JsonObject &jo, std::string
     str_or_var region_type_var;
     optional( jo, false, "region_type", region_type_var, "default" );
 
-    bool take_vehicle = false;;
+    bool take_vehicle = false;
     optional( jo, false, "take_vehicle", take_vehicle );
 
     std::optional<var_info> target_location;
@@ -7958,7 +7958,7 @@ talk_effect_fun_t::func f_travel_to_dimension( const JsonObject &jo, std::string
 
                 int item_radius = item_travel_radius.evaluate( d );
                 std::vector<item_location> items;
-                tripoint_bub_ms center;
+                std::optional<tripoint_bub_ms> center;
                 if( item_radius > 0 ) {
                     map &here = get_map();
                     if( target_location ) {
@@ -7966,7 +7966,7 @@ talk_effect_fun_t::func f_travel_to_dimension( const JsonObject &jo, std::string
                     } else {
                         center = here.get_bub( teleporter->pos_abs() );
                     }
-                    for( const tripoint_bub_ms &pos : here.points_in_radius( center, item_radius ) ) {
+                    for( const tripoint_bub_ms &pos : here.points_in_radius( *center, item_radius ) ) {
                         for( item &it : here.i_at( pos ) ) {
                             items.emplace_back( map_cursor( pos ), &it );
                         }

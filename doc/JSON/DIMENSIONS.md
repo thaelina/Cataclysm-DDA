@@ -45,10 +45,12 @@ Travel to dimension `test`, take any item within 3 tiles of your avatar with you
 { "u_travel_to_dimension": "test", "item_travel_radius": 3 }
 ```
 
-If you pass a location variable in `target_location`, the function will use that as the center for where to get items from and where to place items after the shift. Essentially this picks up items from and places them in then same location relative to the player.  
+If you pass a location variable in `target_location`, the function will use that as the center point for where to get items from and where to place items after the shift.
 ```jsonc
 { "u_travel_to_dimension": "test", "item_travel_radius": 3, "region_type": "default", "target_location": { "u_val": "debug_loc" } }
 ```
+
+All of the items transferred as part of the shift will be placed on the player's location, or `target_location` if set. Any items that do not fit in that tile will spill outwards from that point until all of them can be placed.
 
 ## Region Settings
 
