@@ -7914,7 +7914,7 @@ talk_effect_fun_t::func f_travel_to_dimension( const JsonObject &jo, std::string
     optional( jo, false, "npc_travel_radius", npc_travel_radius, 0 );
 
     dbl_or_var item_travel_radius;
-    optional( jo, false, "item_travel_radius", item_travel_radius, 0 );
+    optional( jo, false, "item_travel_radius", item_travel_radius, -1 );
 
     str_or_var region_type_var;
     optional( jo, false, "region_type", region_type_var, "default" );
@@ -7959,7 +7959,7 @@ talk_effect_fun_t::func f_travel_to_dimension( const JsonObject &jo, std::string
                 int item_radius = item_travel_radius.evaluate( d );
                 std::vector<item_location> items;
                 std::optional<tripoint_bub_ms> center;
-                if( item_radius > 0 ) {
+                if( item_radius >= 0 ) {
                     map &here = get_map();
                     if( target_location ) {
                         center = here.get_bub( read_var_value( *target_location, d ).tripoint() );

@@ -4547,7 +4547,7 @@ Unloads the current dimension and loads the dimension with the specific ID, opti
 | "u_travel_to_dimension" | **mandatory** | string | Will teleport the player to a dimension with the ID. |
 | "npc_travel_radius" | optional | int or [variable object](#variable-object) | default 0; if a value above 0 is specified, the NPCs within that radius around the player will be transported with them when dimension hopping. |
 | "npc_travel_filter" | optional | string or [variable object](#variable-object) | default `all`; Acceps the following values: `all`, `follower`, `enemy`. Does nothing if `npc_travel_radius` is 0. |
-| "item_travel_radius" | optional | int or [variable object](#variable-object) | default 0; if a value above 0 is specified, the items within that radius around the player will be transported with them when dimension hopping. |
+| "item_travel_radius" | optional | int or [variable object](#variable-object) | default -1; if a value 0 or above is specified, the items within that radius around the player will be transported with them when dimension hopping. |
 | "target_location" | optional | [variable object](#variable-object) | default is the player's location; if present this variable will be used as the center point for items in conjunction with `item_travel_radius` |
 | "region_type" | optional | string or [variable object](#variable-object) | default `default`; The dimension is generated with the region settings of a `region_settings_new` object. |
 
