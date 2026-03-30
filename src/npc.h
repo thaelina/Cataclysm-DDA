@@ -908,6 +908,9 @@ class npc : public Character
         bool is_leader() const;
         // Leading, following, or waiting for the player
         bool is_walking_with() const;
+        // Can actively close-follow right now: walking_with + follow_close
+        // rule + can move + no vehicle mismatch with player.
+        bool should_follow_close() const;
         // In the same faction
         bool is_ally( const Character &p ) const override;
         // Is an ally of the player
@@ -1397,6 +1400,12 @@ class npc : public Character
         }
         void set_committed_goal( const std::string &goal ) {
             ai_cache.committed_goal = goal;
+        }
+        // Persistent duty post from mission/dialogue assignment.
+        // Used by BT duty predicates. Does NOT include ephemeral
+        // sound-investigation anchors from ai_cache.
+        std::optional<tripoint_abs_ms> get_guard_post() const {
+            return guard_pos;
         }
         // Effective guard position: ai_cache (ephemeral, from sound investigation)
         // falls back to persistent guard_pos (from mission/dialogue assignment).

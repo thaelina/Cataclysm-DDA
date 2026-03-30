@@ -49,6 +49,7 @@
 #include "iexamine.h"
 #include "monster.h"
 #include "npc.h"
+#include "npc_class.h"
 #include "npctalk.h"
 #include "options_helpers.h"
 #include "output.h"
@@ -78,6 +79,7 @@ enum npc_action : int;
 static const activity_id ACT_FORAGE( "ACT_FORAGE" );
 
 static const efftype_id effect_bouldering( "bouldering" );
+static const efftype_id effect_catch_up( "catch_up" );
 static const efftype_id effect_lying_down( "lying_down" );
 static const efftype_id effect_meth( "meth" );
 static const efftype_id effect_sleep( "sleep" );
@@ -120,6 +122,8 @@ static const npc_class_id NC_ROBOFAC_INTERCOM_NIGHT( "NC_ROBOFAC_INTERCOM_NIGHT"
 static const npc_class_id NC_ROBOFAC_INTERCOM_SUPPLY( "NC_ROBOFAC_INTERCOM_SUPPLY" );
 static const npc_class_id test_shop_class( "test_shop_class" );
 
+static const string_id<behavior::node_t> behavior_node_t_npc_decision( "npc_decision" );
+
 static const ter_str_id ter_t_concrete_wall( "t_concrete_wall" );
 static const ter_str_id ter_t_door_c( "t_door_c" );
 static const ter_str_id ter_t_floor( "t_floor" );
@@ -145,6 +149,7 @@ static const vpart_id vpart_seat( "seat" );
 static const vpart_id vpart_trunk_floor( "trunk_floor" );
 
 static const vproto_id vehicle_prototype_none( "none" );
+static const vproto_id vehicle_prototype_test_rv( "test_rv" );
 static const vproto_id vehicle_prototype_test_shopping_cart( "test_shopping_cart" );
 
 static const zone_type_id zone_type_CAMP_FOOD( "CAMP_FOOD" );
@@ -3642,8 +3647,7 @@ TEST_CASE( "return_to_start_pos_npc_still_uses_legacy_fallback", "[npc][schedule
 
     npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
     clear_character( guy, true );
-    // RETURN_TO_START_POS but NOT shopkeep/guard/guard_patrol,
-    // so the BT block is skipped and the legacy fallback applies.
+    // RETURN_TO_START_POS + SHELTER. BT duty fires, same result as before.
     guy.set_mutation( trait_RETURN_TO_START_POS );
     guy.set_mission( NPC_MISSION_SHELTER );
     guy.set_hunger( 0 );
@@ -3665,11 +3669,532 @@ TEST_CASE( "return_to_start_pos_npc_still_uses_legacy_fallback", "[npc][schedule
 
     REQUIRE( guy.pos_abs() != post );
 
+    // First tick commits to return_to_guard_pos.
+    guy.set_moves( 100 );
+    guy.move();
+    CHECK( guy.get_committed_goal() == "return_to_guard_pos" );
+
+    for( int i = 0; i < 2; ++i ) {
+        guy.set_moves( 100 );
+        guy.move();
+    }
+
+    CHECK( rl_dist( guy.pos_bub(), here.get_bub( post ) ) < initial_dist );
+}
+
+TEST_CASE( "follow_player_commitment_lifecycle", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    get_player_character().setpos( here, tripoint_bub_ms( 65, 50, 0 ) );
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.regen_ai_cache();
+
+    REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() ) > 4 );
+
+    SECTION( "committed_goal set to follow_player when far" ) {
+        guy.set_moves( 100 );
+        guy.move();
+        CHECK( guy.get_committed_goal() == "follow_player" );
+    }
+    SECTION( "committed_goal clears when within follow_distance" ) {
+        for( int i = 0; i < 20; ++i ) {
+            guy.set_moves( 100 );
+            guy.move();
+            if( rl_dist( guy.pos_abs(), get_player_character().pos_abs() )
+                <= guy.follow_distance() ) {
+                break;
+            }
+        }
+        REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() )
+                 <= guy.follow_distance() );
+        guy.set_moves( 100 );
+        guy.move();
+        CHECK( guy.get_committed_goal().empty() );
+    }
+}
+
+TEST_CASE( "temp_anchor_return_after_bt_idle", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    get_player_character().setpos( here, tripoint_bub_ms( 50, 50, -2 ) );
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.set_attitude( NPCATT_NULL );
+    guy.guard_pos = std::nullopt;
+
+    // NPC displaced from origin by sound investigation, temp anchor set.
+    const tripoint_abs_ms anchor = guy.pos_abs();
+    guy.setpos( here, tripoint_bub_ms( 55, 50, 0 ) );
+    guy.set_ai_guard_pos( anchor );
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.goal = guy.pos_abs_omt();
+    guy.regen_ai_cache();
+
+    REQUIRE( guy.pos_abs() != anchor );
+    REQUIRE( guy.get_effective_guard_pos() == anchor );
+    REQUIRE_FALSE( guy.get_guard_post().has_value() );
+
+    // Idle dispatch sees temp anchor, routes npc_return_to_guard_pos.
+    for( int i = 0; i < 10; ++i ) {
+        guy.set_moves( 100 );
+        guy.move();
+        if( guy.pos_abs() == anchor ) {
+            break;
+        }
+    }
+
+    CHECK( guy.pos_abs() == anchor );
+}
+
+TEST_CASE( "bt_idle_falls_through_to_cascade_goto", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.setpos( here, tripoint_bub_ms( 50, 50, 0 ) );
+    // Player within follow_distance, so BT returns idle.
+    get_player_character().setpos( here, tripoint_bub_ms( 52, 50, 0 ) );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    // Clear after regen so RETURN_TO_START_POS doesn't repopulate.
+    guy.regen_ai_cache();
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    REQUIRE_FALSE( guy.get_effective_guard_pos().has_value() );
+    REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() ) <= guy.follow_distance() );
+
+    // Player-ordered goto.
+    const tripoint_abs_ms target = guy.pos_abs() + tripoint( 5, 0, 0 );
+    guy.goto_to_this_pos = target;
+
+    guy.set_moves( 100 );
+    guy.move();
+
+    CHECK( guy.get_committed_goal() == "goto_ordered_position" );
+    CHECK( rl_dist( guy.pos_abs(), target ) < 5 );
+}
+
+TEST_CASE( "anchored_follower_uses_duty_not_follow", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+
+    // Player west, guard post east. NPC at center.
+    const tripoint_bub_ms npc_pos( 50, 50, 0 );
+    const tripoint_bub_ms player_pos( 40, 50, 0 );
+    get_player_character().setpos( here, player_pos );
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.setpos( here, npc_pos );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_GUARD_ALLY );
+    const tripoint_abs_ms post = guy.pos_abs() + tripoint( 10, 0, 0 );
+    guy.set_guard_pos( post );
+    calendar::turn = calendar::turn_zero + 12_hours;
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.regen_ai_cache();
+
+    REQUIRE( guy.myclass.is_valid() );
+    const auto &[wh_start, wh_end] = guy.myclass.obj().get_work_hours();
+    REQUIRE( ( wh_start == 0 && wh_end == 24 ) );
+    REQUIRE( guy.get_guard_post().has_value() );
+    REQUIRE( guy.pos_abs() != post );
+    REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() ) > 4 );
+
+    SECTION( "BT returns return_to_guard_pos, not follow_player" ) {
+        behavior::character_oracle_t oracle( &guy );
+        behavior::tree decision_tree;
+        decision_tree.add( &behavior_node_t_npc_decision.obj() );
+        CHECK( decision_tree.tick( &oracle ) == "return_to_guard_pos" );
+    }
+    SECTION( "live turns: NPC moves toward post, not player" ) {
+        const int initial_dist_post = rl_dist( guy.pos_abs(), post );
+        const int initial_dist_player = rl_dist( guy.pos_abs(),
+                                        get_player_character().pos_abs() );
+        for( int i = 0; i < 3; ++i ) {
+            guy.set_moves( 100 );
+            guy.move();
+        }
+        CHECK( rl_dist( guy.pos_abs(), post ) < initial_dist_post );
+        CHECK( rl_dist( guy.pos_abs(), get_player_character().pos_abs() )
+               > initial_dist_player );
+    }
+}
+
+TEST_CASE( "guard_assignment_clears_follow_commitment", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    get_player_character().setpos( here, tripoint_bub_ms( 65, 50, 0 ) );
+    calendar::turn = calendar::turn_zero + 12_hours;
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.regen_ai_cache();
+
+    REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() ) > 4 );
+
+    guy.set_moves( 100 );
+    guy.move();
+    REQUIRE( guy.get_committed_goal() == "follow_player" );
+
+    const tripoint_abs_ms pre_assign_pos = guy.pos_abs();
+
+    // Simulate assign_guard: guard current tile.
+    guy.set_attitude( NPCATT_NULL );
+    guy.set_mission( NPC_MISSION_GUARD_ALLY );
+    guy.set_omt_destination();
+    REQUIRE( guy.get_guard_post().has_value() );
+    REQUIRE( *guy.get_guard_post() == pre_assign_pos );
+    REQUIRE( guy.myclass.is_valid() );
+    const auto &[wh_start2, wh_end2] = guy.myclass.obj().get_work_hours();
+    REQUIRE( ( wh_start2 == 0 && wh_end2 == 24 ) );
+
+    // Follow commitment clears, NPC stays at post.
+    guy.set_moves( 100 );
+    guy.move();
+    CHECK( guy.get_committed_goal().empty() );
+    CHECK( guy.pos_abs() == pre_assign_pos );
+
+    // Next tick: hold_position commits.
+    guy.set_moves( 100 );
+    guy.move();
+    CHECK( guy.get_committed_goal() == "hold_position" );
+    CHECK( guy.pos_abs() == pre_assign_pos );
+}
+
+TEST_CASE( "player_embarks_clears_follow_commitment", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    Character &pc = get_player_character();
+    pc.setpos( here, tripoint_bub_ms( 65, 50, 0 ) );
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.regen_ai_cache();
+
+    REQUIRE( rl_dist( guy.pos_abs(), pc.pos_abs() ) > 4 );
+
+    guy.set_moves( 100 );
+    guy.move();
+    REQUIRE( guy.get_committed_goal() == "follow_player" );
+
+    // Player boards a vehicle.
+    vehicle *veh = here.add_vehicle( vehicle_prototype_test_rv, pc.pos_bub(),
+                                     0_degrees, 100, 0 );
+    REQUIRE( veh != nullptr );
+    here.board_vehicle( pc.pos_bub(), &pc );
+    REQUIRE( pc.in_vehicle );
+    REQUIRE_FALSE( guy.in_vehicle );
+
+    // Vehicle mismatch clears follow commitment.
+    guy.set_moves( 100 );
+    guy.move();
+    CHECK( guy.get_committed_goal() != "follow_player" );
+}
+
+TEST_CASE( "goto_order_beats_generic_follow", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.setpos( here, tripoint_bub_ms( 50, 50, 0 ) );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.regen_ai_cache();
+
+    // Player west, goto target east -- opposite directions.
+    get_player_character().setpos( here, tripoint_bub_ms( 40, 50, 0 ) );
+    const tripoint_abs_ms goto_target = guy.pos_abs() + tripoint( 10, 0, 0 );
+    guy.goto_to_this_pos = goto_target;
+
+    REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() )
+             > guy.follow_distance() );
+    REQUIRE( guy.goto_to_this_pos.has_value() );
+
+    const int initial_dist_goto = rl_dist( guy.pos_abs(), goto_target );
+
+    guy.set_moves( 100 );
+    guy.move();
+    CHECK( guy.get_committed_goal() == "goto_ordered_position" );
+
+    for( int i = 0; i < 2; ++i ) {
+        guy.set_moves( 100 );
+        guy.move();
+    }
+
+    // Moved east toward goto, not west toward player.
+    CHECK( guy.pos_bub().x() > 50 );
+    CHECK( rl_dist( guy.pos_abs(), goto_target ) < initial_dist_goto );
+}
+
+TEST_CASE( "follow_close_beats_fetching_item", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.setpos( here, tripoint_bub_ms( 50, 50, 0 ) );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.regen_ai_cache();
+
+    // Player west, pending pickup east -- opposite directions.
+    get_player_character().setpos( here, tripoint_bub_ms( 40, 50, 0 ) );
+    REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() )
+             > guy.follow_distance() );
+
+    guy.fetching_item = true;
+    guy.wanted_item_pos = tripoint_bub_ms( 55, 50, 0 );
+
+    guy.set_moves( 100 );
+    guy.move();
+
+    // Follow wins over item pickup, matching old cascade ordering.
+    CHECK( guy.pos_bub().x() < 50 );
+}
+
+TEST_CASE( "activity_npc_without_task_reverts_to_follower", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    get_player_character().setpos( here, tripoint_bub_ms( 50, 50, -2 ) );
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_ACTIVITY );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.assigned_camp = std::nullopt;
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.regen_ai_cache();
+
+    REQUIRE( guy.get_attitude() == NPCATT_ACTIVITY );
+    REQUIRE_FALSE( guy.activity );
+
+    guy.set_moves( 100 );
+    guy.move();
+
+    // Cascade revert: ally without camp reverts to FOLLOW.
+    CHECK( guy.get_attitude() == NPCATT_FOLLOW );
+    CHECK( guy.get_committed_goal().empty() );
+}
+
+TEST_CASE( "stationary_npc_bt_idle_pauses", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    get_player_character().setpos( here, tripoint_bub_ms( 50, 50, -2 ) );
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_attitude( NPCATT_NULL );
+    guy.set_mission( NPC_MISSION_SHELTER );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.goal = guy.pos_abs_omt();
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+    guy.regen_ai_cache();
+
+    REQUIRE( guy.is_stationary( true ) );
+    const tripoint_abs_ms start_pos = guy.pos_abs();
+
+    guy.set_moves( 100 );
+    guy.move();
+
+    CHECK( guy.get_committed_goal().empty() );
+    CHECK( guy.pos_abs() == start_pos );
+}
+
+TEST_CASE( "leader_npc_leads_not_follows", "[npc][behavior]" )
+{
+    clear_map();
+    clear_avatar();
+    map &here = get_map();
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.setpos( here, tripoint_bub_ms( 50, 50, 0 ) );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_LEAD );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+
+    // Player 5 tiles west. Destination east.
+    get_player_character().setpos( here, tripoint_bub_ms( 45, 50, 0 ) );
+    guy.goal = project_to<coords::omt>( guy.pos_abs() + tripoint( 10 * SEEX, 0, 0 ) );
+    guy.regen_ai_cache();
+
+    REQUIRE( guy.is_leader() );
+    REQUIRE( guy.is_player_ally() );
+    REQUIRE( guy.has_omt_destination() );
+    REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() ) < 12 );
+
     for( int i = 0; i < 3; ++i ) {
         guy.set_moves( 100 );
         guy.move();
     }
 
-    // Legacy fallback should still fire: NPC moves closer to post.
-    CHECK( rl_dist( guy.pos_bub(), here.get_bub( post ) ) < initial_dist );
+    CHECK( guy.get_committed_goal() != "follow_player" );
+    // Did not move toward player (west). Either moved east or stayed put.
+    CHECK( guy.pos_bub().x() >= 50 );
+}
+
+TEST_CASE( "leader_npc_waits_when_player_far", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.setpos( here, tripoint_bub_ms( 50, 50, 0 ) );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_LEAD );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_hunger( 0 );
+    guy.set_thirst( 0 );
+    guy.set_sleepiness( 0 );
+    guy.set_stored_kcal( guy.get_healthy_kcal() );
+    guy.set_all_parts_temp_conv( BODYTEMP_NORM );
+    guy.set_all_parts_temp_cur( BODYTEMP_NORM );
+
+    // Player 15 tiles west (>= 12, triggers "keep up").
+    get_player_character().setpos( here, tripoint_bub_ms( 35, 50, 0 ) );
+    guy.goal = project_to<coords::omt>( guy.pos_abs() + tripoint( 10 * SEEX, 0, 0 ) );
+    guy.regen_ai_cache();
+
+    REQUIRE( guy.is_leader() );
+    REQUIRE( guy.is_player_ally() );
+    REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() ) >= 12 );
+
+    const tripoint_abs_ms start_pos = guy.pos_abs();
+    guy.set_moves( 100 );
+    guy.move();
+
+    // Leader should pause and gain catch_up effect, NOT follow.
+    CHECK( guy.pos_abs() == start_pos );
+    CHECK( guy.get_committed_goal() != "follow_player" );
+    CHECK( guy.has_effect( effect_catch_up ) );
 }

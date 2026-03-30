@@ -34,7 +34,7 @@
     "type": "behavior",
     "id": "npc_priorities",
     "strategy": "utility",
-    "children": [ "npc_needs", "npc_duty" ]
+    "children": [ "npc_needs", "npc_duty", "npc_follow", "npc_player_order" ]
   },
   {
     "type": "behavior",
@@ -54,6 +54,20 @@
     "id": "npc_hold_post",
     "conditions": [ { "predicate": "npc_on_shift" } ],
     "goal": "hold_position"
+  },
+  {
+    "type": "behavior",
+    "id": "npc_follow",
+    "conditions": [ { "predicate": "npc_is_following" } ],
+    "goal": "follow_player",
+    "score": "npc_following_urgency"
+  },
+  {
+    "type": "behavior",
+    "id": "npc_player_order",
+    "conditions": [ { "predicate": "npc_has_goto_order" } ],
+    "goal": "goto_ordered_position",
+    "score": "npc_goto_order_urgency"
   },
   {
     "type": "behavior",

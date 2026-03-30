@@ -477,6 +477,7 @@ void talk_function::stop_guard( npc &p )
     p.chatbin.first_topic = p.chatbin.talk_friend;
     p.goal = npc::no_goal_point;
     p.guard_pos = std::nullopt;
+    p.clear_ai_guard_pos();
     if( p.assigned_camp ) {
         if( std::optional<basecamp *> bcp = overmap_buffer.find_camp( ( *p.assigned_camp ).xy() ) ) {
             ( *bcp )->remove_assignee( p.getID() );
