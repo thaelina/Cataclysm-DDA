@@ -156,7 +156,21 @@
       { "run_eocs": [ "EOC_CANCEL_PORTAL_STORM", "EOC_raid_challenge_mode_post_raid" ] },
       { "u_run_npc_eocs": [ "EOC_SKY_ISLAND_DIMENSION_SHIFT_CHARACTER_EFFECTS" ], "npc_range": 10, "local": true },
       { "run_eocs": [ "EOC_SKY_ISLAND_DIMENSION_SHIFT_CHARACTER_EFFECTS" ] },
-      { "u_travel_to_dimension": "default", "npc_travel_radius": 10, "region_type": "default" },
+      { "mapgen_update": "raid_return_platform", "target_var": { "global_val": "OM_HQ_origin" } },
+      {
+        "if": { "math": [ "si_bring_items_from_raid == 1" ] },
+        "then": [
+          { "math": [ "si_bring_items_from_raid = 0" ] },
+          { "u_location_variable": { "context_val": "loc" } },
+          {
+            "u_map_run_item_eocs": "all",
+            "loc": { "context_val": "loc" },
+            "min_radius": 0,
+            "max_radius": 4,
+            "true_eocs": [ { "id": "EOC_map_item_runa", "effect": [ { "npc_teleport": { "global_val": "OM_HQ_origin" } } ] } ]
+          }
+        ]
+      },
       {
         "u_run_npc_eocs": [
           {
@@ -181,6 +195,12 @@
         "success_message": "You arrive on the island.",
         "fail_message": "It seems the portal couldn't find a valid location.",
         "force_safe": true
+      },
+      {
+        "u_travel_to_dimension": "default",
+        "npc_travel_radius": 10,
+        "item_travel_radius": 10,
+        "region_type": "default"
       },
       { "u_remove_item_with": "warphome" },
       { "u_remove_item_with": "warp_healing_salve" },
@@ -312,7 +332,12 @@
       "u_query": "This will teleport you back to your sky island.  Any items inside the room will be teleported home alongside you.  Are you ready to leave?",
       "default": false
     },
-    "effect": [ { "math": [ "raidswon++" ] }, { "math": [ "gettokens = 1" ] }, { "run_eocs": [ "EOC_return_OM_teleport_item" ] } ]
+    "effect": [
+      { "math": [ "raidswon++" ] },
+      { "math": [ "gettokens = 1" ] },
+      { "math": [ "si_bring_items_from_raid = 1" ] },
+      { "run_eocs": [ "EOC_return_OM_teleport" ] }
+    ]
   },
   {
     "type": "effect_on_condition",
@@ -332,8 +357,9 @@
     "effect": [
       { "math": [ "raidswon++" ] },
       { "math": [ "gettokens = 1" ] },
+      { "math": [ "si_bring_items_from_raid = 1" ] },
       { "u_consume_item": "warp_vortex_token", "count": 1 },
-      { "run_eocs": [ "EOC_return_OM_teleport_item" ] }
+      { "run_eocs": [ "EOC_return_OM_teleport" ] }
     ]
   },
   {
@@ -345,21 +371,5 @@
       "default": false
     },
     "effect": [ { "math": [ "raidswon++" ] }, { "math": [ "gettokens = 1" ] }, { "run_eocs": [ "EOC_return_OM_teleport" ] } ]
-  },
-  {
-    "type": "effect_on_condition",
-    "id": "EOC_return_OM_teleport_item",
-    "effect": [
-      { "u_location_variable": { "context_val": "loc" } },
-      {
-        "u_map_run_item_eocs": "all",
-        "loc": { "context_val": "loc" },
-        "min_radius": 0,
-        "max_radius": 10,
-        "true_eocs": [ { "id": "EOC_map_item_run", "effect": [ { "npc_teleport": { "global_val": "OM_HQ_origin" } } ] } ]
-      },
-      { "run_eocs": [ "EOC_return_OM_teleport" ], "time_in_future": "1 s" },
-      { "u_message": "Now teleporting back home.  Please wait…" }
-    ]
   }
 ]
