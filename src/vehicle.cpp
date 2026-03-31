@@ -6425,6 +6425,9 @@ std::optional<vehicle_stack::iterator> vehicle::add_item( map &here, vehicle_par
             if( !item_ptr->merge_charges( itm ) ) {
                 return std::nullopt;
             } else {
+                if( itm.is_emissive() ) {
+                    here.set_lightmap_cache_dirty( bub_part_pos( here, vp ).z() );
+                }
                 return std::optional<vehicle_stack::iterator>( istack.get_iterator_from_pointer( item_ptr ) );
             }
         }
@@ -6440,6 +6443,9 @@ std::optional<vehicle_stack::iterator> vehicle::add_item( map &here, vehicle_par
 
     const vehicle_stack::iterator new_pos = vp.items.insert( itm_copy );
     active_items.add( *new_pos, vp.mount );
+    if( itm_copy.is_emissive() ) {
+        here.set_lightmap_cache_dirty( bub_part_pos( here, vp ).z() );
+    }
 
     invalidate_mass();
     return std::optional<vehicle_stack::iterator>( new_pos );
@@ -6459,6 +6465,10 @@ bool vehicle::remove_item( vehicle_part &vp, item *it )
 vehicle_stack::iterator vehicle::remove_item( vehicle_part &vp,
         const vehicle_stack::const_iterator &it )
 {
+    if( it->is_emissive() ) {
+        map &here = get_map();
+        here.set_lightmap_cache_dirty( bub_part_pos( here, vp ).z() );
+    }
     invalidate_mass();
     return vp.items.erase( it );
 }
