@@ -256,6 +256,10 @@ const char *category_name( decision_category cat )
             return "investigate";
         case decision_category::needs:
             return "needs";
+        case decision_category::follow:
+            return "follow";
+        case decision_category::order:
+            return "order";
         case decision_category::duty:
             return "duty";
         case decision_category::idle:
@@ -277,6 +281,12 @@ decision_category bt_goal_to_category( const std::string &goal )
     if( goal == "drink_water" || goal == "eat_food" || goal == "go_to_sleep" ||
         goal == "wear_warmer_clothes" || goal == "take_shelter" || goal == "start_fire" ) {
         return decision_category::needs;
+    }
+    if( goal == "follow_player" ) {
+        return decision_category::follow;
+    }
+    if( goal == "goto_ordered_position" ) {
+        return decision_category::order;
     }
     if( goal == "return_to_guard_pos" || goal == "hold_position" ) {
         return decision_category::duty;
@@ -310,6 +320,11 @@ static decision_category cascade_action_to_category( npc_action action )
             return decision_category::investigate;
         case npc_sleep:
             return decision_category::needs;
+        case npc_follow_player:
+        case npc_follow_embarked:
+            return decision_category::follow;
+        case npc_goto_to_this_pos:
+            return decision_category::order;
         case npc_return_to_guard_pos:
             return decision_category::duty;
         case npc_undecided:
@@ -1640,14 +1655,10 @@ void npc::move()
         // No present danger
         cleanup_on_no_danger();
 
-        // Duty NPCs with a guard post: let BT arbitrate needs vs duty.
-        // The BT evaluates every turn but committed goals persist until
-        // completed or overridden by a higher-priority category
-        // (combat > investigation > needs/duty > idle).
-        bool bt_dispatched = false;
-        if( ( mission == NPC_MISSION_SHOPKEEP || mission == NPC_MISSION_GUARD ||
-              mission == NPC_MISSION_GUARD_PATROL ) && get_effective_guard_pos() ) {
-            bt_dispatched = true;
+        // BT evaluates every turn for all NPCs. Committed goals persist
+        // until completed or overridden by a higher-priority category
+        // (combat > investigation > needs > follow > duty > idle).
+        {
             behavior::character_oracle_t oracle( this );
             behavior::tree decision_tree;
             decision_tree.add( &behavior_node_t_npc_decision.obj() );
@@ -1669,12 +1680,20 @@ void npc::move()
                 } else if( committed == "go_to_sleep" ) {
                     completed_goal = has_effect( effect_sleep ) ||
                                      get_sleepiness() < static_cast<int>( sleepiness_levels::TIRED );
-                    // BT no longer wants sleep specifically: context changed
-                    // (shift started, or a more urgent need appeared).
-                    // If genuinely exhausted, BT still returns go_to_sleep
-                    // and commitment persists.
                     if( !completed_goal ) {
                         completed_goal = ( new_goal != "go_to_sleep" );
+                    }
+                } else if( committed == "follow_player" ) {
+                    const Character &pc = get_player_character();
+                    completed_goal = ( rl_dist( pos_bub(), pc.pos_bub() ) <= follow_distance()
+                                       && posz() == pc.posz() );
+                    if( !completed_goal ) {
+                        completed_goal = ( new_goal != "follow_player" );
+                    }
+                } else if( committed == "goto_ordered_position" ) {
+                    completed_goal = !goto_to_this_pos || pos_abs() == *goto_to_this_pos;
+                    if( !completed_goal ) {
+                        completed_goal = ( new_goal != "goto_ordered_position" );
                     }
                 }
                 if( completed_goal ) {
@@ -1699,34 +1718,36 @@ void npc::move()
                     ai_cache.guard_pos = get_effective_guard_pos();
                 }
                 action = npc_return_to_guard_pos;
-            } else if( new_goal == "hold_position" || new_goal == "idle" ) {
-                // At post (on shift or idle). High danger parameter
-                // prevents address_needs from sending NPC to wander.
+            } else if( new_goal == "follow_player" ) {
+                action = npc_follow_player;
+            } else if( new_goal == "goto_ordered_position" ) {
+                action = npc_goto_to_this_pos;
+            } else if( new_goal == "hold_position" ) {
                 action = address_needs( NPC_DANGER_VERY_LOW + 1 );
+            } else if( new_goal == "idle" ) {
+                if( guard_pos ) {
+                    // Persistent duty post: stay put, tend minor needs.
+                    action = address_needs( NPC_DANGER_VERY_LOW + 1 );
+                } else if( ai_cache.guard_pos ) {
+                    // Temp anchor (sound investigation): return to origin.
+                    action = npc_return_to_guard_pos;
+                } else {
+                    // No anchor. Run address_needs so the legacy sleep/eat/drink
+                    // paths still work (the BT may have returned idle because a
+                    // predicate like can_sleep failed, but address_needs has its
+                    // own fallback logic like lying_down on meth).
+                    action = address_needs();
+                }
             } else {
                 // Needs goal (sleep, eat, drink, etc.). Full address_needs.
                 action = address_needs();
             }
-        } else {
-            action = address_needs();
         }
         print_action( "address_needs %s", action );
 
         if( action == npc_undecided ) {
             action = address_player();
             print_action( "address_player %s", action );
-        }
-        if( action == npc_undecided && !bt_dispatched && ai_cache.sound_alerts.empty() &&
-            !has_flag( json_flag_CANNOT_MOVE ) ) {
-            std::optional<tripoint_abs_ms> effective = get_effective_guard_pos();
-            if( effective && pos_abs() != *effective ) {
-                if( !ai_cache.guard_pos ) {
-                    ai_cache.guard_pos = effective;
-                }
-                add_msg_debug( debugmode::DF_NPC, "NPC %s: returning to guard spot at x(%d) y(%d)",
-                               get_name(), effective->x(), effective->y() );
-                action = npc_return_to_guard_pos;
-            }
         }
     }
 
@@ -1742,10 +1763,8 @@ void npc::move()
         path.clear();
     }
 
-    if( action == npc_undecided && is_walking_with() && rules.has_flag( ally_rule::follow_close ) &&
-        rl_dist( pos_bub(), player_character.pos_bub() ) > follow_distance() &&
-        !( player_character.in_vehicle &&
-           in_vehicle ) && !has_flag( json_flag_CANNOT_MOVE ) ) {
+    if( action == npc_undecided && should_follow_close() &&
+        rl_dist( pos_bub(), player_character.pos_bub() ) > follow_distance() ) {
         action = npc_follow_player;
     }
 

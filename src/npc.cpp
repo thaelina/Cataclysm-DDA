@@ -125,6 +125,7 @@ static const item_group_id Item_spawn_data_survivor_stabbing( "survivor_stabbing
 
 static const itype_id itype_molotov( "molotov" );
 
+static const json_character_flag json_flag_CANNOT_MOVE( "CANNOT_MOVE" );
 static const json_character_flag json_flag_READ_IN_DARKNESS( "READ_IN_DARKNESS" );
 static const json_character_flag json_flag_SAPIOVORE( "SAPIOVORE" );
 
@@ -2673,6 +2674,27 @@ bool npc::guaranteed_hostile() const
 bool npc::is_walking_with() const
 {
     return attitude == NPCATT_FOLLOW || attitude == NPCATT_LEAD || attitude == NPCATT_WAIT;
+}
+
+bool npc::should_follow_close() const
+{
+    if( !is_following() ) {
+        return false;
+    }
+    if( !rules.has_flag( ally_rule::follow_close ) ) {
+        return false;
+    }
+    if( has_flag( json_flag_CANNOT_MOVE ) ) {
+        return false;
+    }
+    const Character &player = get_player_character();
+    if( player.in_vehicle && !in_vehicle ) {
+        return false;
+    }
+    if( player.in_vehicle && in_vehicle ) {
+        return false;
+    }
+    return true;
 }
 
 bool npc::is_obeying( const Character &p ) const

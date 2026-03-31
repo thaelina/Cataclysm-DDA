@@ -40,6 +40,8 @@ class character_oracle_t : public oracle_t
         status_t has_sound_alerts( std::string_view ) const;
         status_t displaced_from_post( std::string_view ) const;
         status_t on_shift( std::string_view ) const;
+        status_t npc_is_following( std::string_view ) const;
+        status_t npc_has_goto_order( std::string_view ) const;
         /**
          * Score predicates for utility strategy (return 0-1 urgency).
          */
@@ -48,6 +50,8 @@ class character_oracle_t : public oracle_t
         float warmth_urgency( std::string_view ) const;
         float sleepiness_urgency( std::string_view ) const;
         float duty_urgency( std::string_view ) const;
+        float npc_following_urgency( std::string_view ) const;
+        float npc_goto_order_urgency( std::string_view ) const;
     private:
         const Character *subject;
 };
