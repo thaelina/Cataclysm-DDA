@@ -386,6 +386,13 @@ class map
                 field_proc_data & );
         friend void field_processor_fd_incendiary( const tripoint_bub_ms &, field_entry &,
                 field_proc_data & );
+        friend void field_processor_monster_spawn( const tripoint_bub_ms &, field_entry &,
+                field_proc_data & );
+
+        // add_spawn is private; these classes need it for data-driven spawning
+        // (JSON mapgen and monster reproduction). Mapgen code should use place_spawns() instead.
+        friend class jmapgen_monster;
+        friend class monster;
 
         // for testing
         friend class map_meddler;
@@ -1734,13 +1741,6 @@ class map
         character_id place_npc( const point_bub_ms &p, const string_id<npc_template> &type );
         void apply_faction_ownership( const point_bub_ms &p1, const point_bub_ms &p2,
                                       const faction_id &id );
-        void add_spawn( const mtype_id &type, int count, const tripoint_bub_ms &p,
-                        bool friendly = false, int faction_id = -1, int mission_id = -1,
-                        const std::optional<std::string> &name = std::nullopt );
-        void add_spawn( const mtype_id &type, int count, const tripoint_bub_ms &p, bool friendly,
-                        int faction_id, int mission_id, const std::optional<std::string> &name,
-                        const spawn_data &data );
-        void add_spawn( const MonsterGroupResult &spawn_details, const tripoint_bub_ms &p );
         void do_vehicle_caching( int z );
         // Note: in 3D mode, will actually build caches on ALL z-levels
         void build_map_cache( int zlev, bool skip_lightmap = false );
@@ -1876,6 +1876,14 @@ class map
         */
         void rotten_item_spawn( const item &item, const tripoint_bub_ms &p );
     private:
+        void add_spawn( const mtype_id &type, int count, const tripoint_bub_ms &p,
+                        bool friendly = false, int faction_id = -1, int mission_id = -1,
+                        const std::optional<std::string> &name = std::nullopt );
+        void add_spawn( const mtype_id &type, int count, const tripoint_bub_ms &p, bool friendly,
+                        int faction_id, int mission_id, const std::optional<std::string> &name,
+                        const spawn_data &data );
+        void add_spawn( const MonsterGroupResult &spawn_details, const tripoint_bub_ms &p );
+
         // Helper #1 - spawns monsters on one submap
         void spawn_monsters_submap( const tripoint_rel_sm &gp, bool ignore_sight,
                                     bool spawn_nonlocal = false );
@@ -2379,12 +2387,6 @@ class tinymap : private map
                                friendly,
                                name, mission_id );
         }
-        void add_spawn( const mtype_id &type, int count, const tripoint_omt_ms &p,
-                        bool friendly = false, int faction_id = -1, int mission_id = -1,
-                        const std::optional<std::string> &name = std::nullopt ) {
-            map::add_spawn( type, count, rebase_bub( p ), friendly, faction_id, mission_id, name );
-        }
-
         using map::translate;
         ter_id ter( const tripoint_omt_ms &p ) const {
             return map::ter( rebase_bub( p ) );
