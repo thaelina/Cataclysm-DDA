@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -1786,6 +1787,15 @@ void crafting_ui_impl::draw_components( const requirement_data &req,
     // Ensure availability cache is fresh
     req.can_make_with_inventory( crafting_inv, filter );
 
+    // Compute how many of a given component the player has on hand
+    const auto avail_count = [&crafting_inv, &filter]( const item_comp & ic ) -> int {
+        if( item::count_by_charges( ic.type ) )
+        {
+            return crafting_inv.charges_of( ic.type, INT_MAX, filter );
+        }
+        return crafting_inv.amount_of( ic.type, false, INT_MAX, filter );
+    };
+
     ImGui::TextColored( cataimgui::imvec4_from_color( c_white ), "%s",
                         _( "Components:" ) );
 
@@ -1795,13 +1805,28 @@ void crafting_ui_impl::draw_components( const requirement_data &req,
             continue;
         }
 
+        // Sort available components first so they aren't hidden behind "or N more"
+        // Order: has enough > has some > has none
+        std::vector<const item_comp *> sorted_alts;
+        sorted_alts.reserve( comp_alts.size() );
         bool any_available = false;
         for( const item_comp &ic : comp_alts ) {
+            sorted_alts.push_back( &ic );
             if( ic.has( crafting_inv, filter, batch_size ) ) {
                 any_available = true;
-                break;
             }
         }
+        const auto comp_rank = [&]( const item_comp * ic ) -> int {
+            if( ic->has( crafting_inv, filter, batch_size ) )
+            {
+                return 0;
+            }
+            return avail_count( *ic ) > 0 ? 1 : 2;
+        };
+        std::stable_sort( sorted_alts.begin(), sorted_alts.end(),
+        [&]( const item_comp * a, const item_comp * b ) {
+            return comp_rank( a ) < comp_rank( b );
+        } );
 
         const bool is_expanded = expanded_comp_groups.count( gi ) > 0;
         const std::string bullet = "  \u2022 ";
@@ -1810,10 +1835,10 @@ void crafting_ui_impl::draw_components( const requirement_data &req,
             ImGui::TextColored( cataimgui::imvec4_from_color( c_white ), "%s", bullet.c_str() );
             float indent = ImGui::CalcTextSize( "      " ).x;
             ImGui::Indent( indent );
-            for( const item_comp &ic : comp_alts ) {
-                nc_color col = ic.get_color( any_available, crafting_inv, filter, batch_size );
+            for( const item_comp *ic : sorted_alts ) {
+                nc_color col = ic->get_color( any_available, crafting_inv, filter, batch_size );
                 ImGui::TextColored( cataimgui::imvec4_from_color( col ), "%s",
-                                    ic.to_string( batch_size ).c_str() );
+                                    ic->to_string( batch_size, avail_count( *ic ) ).c_str() );
             }
             if( nav_clickable( _( "show less" ), c_dark_gray ) ) {
                 expanded_comp_groups.erase( gi );
@@ -1825,11 +1850,11 @@ void crafting_ui_impl::draw_components( const requirement_data &req,
             float used_w = ImGui::CalcTextSize( bullet.c_str() ).x;
 
             int fits = 0;
-            for( size_t i = 0; i < comp_alts.size(); ++i ) {
-                std::string text = comp_alts[i].to_string( batch_size );
+            for( size_t i = 0; i < sorted_alts.size(); ++i ) {
+                std::string text = sorted_alts[i]->to_string( batch_size, avail_count( *sorted_alts[i] ) );
                 float tw = ImGui::CalcTextSize( text.c_str() ).x;
                 float sep = ( i > 0 ) ? or_w : 0.f;
-                int rem = static_cast<int>( comp_alts.size() ) - fits - 1;
+                int rem = static_cast<int>( sorted_alts.size() ) - fits - 1;
                 float reserve = 0.f;
                 if( rem > 0 ) {
                     std::string more = string_format( _( "or %d more" ), rem );
@@ -1852,12 +1877,12 @@ void crafting_ui_impl::draw_components( const requirement_data &req,
                                         _( " or " ) );
                     ImGui::SameLine( 0, 0 );
                 }
-                nc_color col = comp_alts[i].get_color( any_available, crafting_inv, filter, batch_size );
+                nc_color col = sorted_alts[i]->get_color( any_available, crafting_inv, filter, batch_size );
                 ImGui::TextColored( cataimgui::imvec4_from_color( col ), "%s",
-                                    comp_alts[i].to_string( batch_size ).c_str() );
+                                    sorted_alts[i]->to_string( batch_size, avail_count( *sorted_alts[i] ) ).c_str() );
             }
 
-            int remaining = static_cast<int>( comp_alts.size() ) - fits;
+            int remaining = static_cast<int>( sorted_alts.size() ) - fits;
             if( remaining > 0 ) {
                 ImGui::SameLine( 0, 0 );
                 std::string more_text = string_format( _( " or %d more" ), remaining );
@@ -1923,7 +1948,7 @@ void crafting_ui_impl::draw_requirement_tools( const requirement_data &req,
         const bool has_name = !group_name.empty();
         const bool is_expanded = expanded_tool_groups.count( global_gi ) > 0;
 
-        // Check availability per tool, dedup by type
+        // Check availability per tool, dedup by type, sort available first
         bool any_available = false;
         std::set<itype_id> seen;
         std::vector<const tool_comp *> unique_alts;
@@ -1935,6 +1960,10 @@ void crafting_ui_impl::draw_requirement_tools( const requirement_data &req,
                 }
             }
         }
+        std::stable_partition( unique_alts.begin(), unique_alts.end(),
+        [&]( const tool_comp * tc ) {
+            return tc->has( crafting_inv, return_true<item>, batch_size );
+        } );
 
         // Label
         std::string label = has_name ? string_format( "\u2022 %s: ", group_name ) :
