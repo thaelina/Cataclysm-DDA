@@ -1768,6 +1768,16 @@ std::string avatar::total_daily_calories_string() const
     return ret;
 }
 
+std::set<character_id> avatar::get_followers() const
+{
+    return follower_ids;
+}
+
+std::set<character_id> avatar::get_known_faction_representatives() const
+{
+    return faction_representatives;
+}
+
 std::unique_ptr<talker> get_talker_for( avatar &me )
 {
     return std::make_unique<talker_avatar>( &me );

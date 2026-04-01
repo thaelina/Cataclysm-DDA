@@ -230,7 +230,7 @@ If `npc` has the following fields, the game will display a dialogue with the ind
 Field | Default topic ID  | Uses for...
 ---|---|---
 `talk_friend` | `TALK_FRIEND` | Talk to a follower NPC
-`talk_radio` | `TALK_RADIO` | Talk to a follower NPC with two way radios
+`talk_radio` | `TALK_RADIO` | Talk to a follower NPC or faction representative with two way radios
 `talk_leader` | `TALK_LEADER` | Talk to an NPC that have 5=NPCATT_LEAD
 `talk_stole_item` | `TALK_STOLE_ITEM` | Talk to an NPC that have 18=NPCATT_RECOVER_GOODS
 `talk_wake_up` | `TALK_WAKE_UP` | Talk to a sleeping NPC

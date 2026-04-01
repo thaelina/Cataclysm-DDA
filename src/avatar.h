@@ -405,6 +405,8 @@ class avatar : public Character
         void log_activity_level( float level ) override;
         std::string total_daily_calories_string() const;
         //set 0-3 random hobbies, with 1 and 2 being twice as likely as 0 and 3
+        std::set<character_id> get_followers() const;
+        std::set<character_id> get_known_faction_representatives() const;
 
         int movecounter = 0;
 
@@ -419,6 +421,7 @@ class avatar : public Character
         vproto_id starting_vehicle = vproto_id::NULL_ID();
         std::vector<mtype_id> starting_pets;
         std::set<character_id> follower_ids;
+        std::set<character_id> faction_representatives;
 
         mutable bool aim_cache_dirty = true;
 

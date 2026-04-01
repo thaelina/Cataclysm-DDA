@@ -25,6 +25,15 @@ enum class tab_mode : int {
     NUM_TABS
 };
 
+enum class radio_contact_result : int {
+    ALPHA_NO_RADIO,
+    BETA_NO_RADIO,
+    BOTH_NO_RADIO,
+    TOO_FAR,
+    YES,
+    last
+};
+
 class faction_ui : public cataimgui::window
 {
     public:
@@ -52,6 +61,8 @@ class faction_ui : public cataimgui::window
         void draw_creatures_tab();
         void draw_creature_list();
         void creature_display() const;
+
+        void radio_the_faction();
 
         std::string last_action;
     protected:
@@ -82,8 +93,6 @@ class faction_ui : public cataimgui::window
         npc *picked_follower = nullptr;
         const faction *picked_faction = nullptr;
         const mtype_id *picked_creature = nullptr;
-        bool interactable = false;
-        bool radio_interactable = false;
 
         float get_table_column_width() const {
             return 260.f;

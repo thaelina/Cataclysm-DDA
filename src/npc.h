@@ -1476,6 +1476,8 @@ class npc : public Character
         npc_follower_rules rules;
         bool marked_for_death = false; // If true, we die as soon as we respawn!
         bool hit_by_player = false;
+        // if true, this NPC is a representative of their faction and, given radio, you can radio them
+        bool faction_representative = false;
         // times their opinion has increased from chatting, upper bounds on 'forgiveness'
         int opinion_values_raised = 0;
         bool hallucination = false; // If true, NPC is an hallucination
