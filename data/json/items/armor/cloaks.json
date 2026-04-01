@@ -1675,6 +1675,7 @@
     "warmth": 20,
     "material_thickness": 3.5,
     "flags": [ "OUTER", "OVERSIZE", "UNBREAKABLE", "SOFT" ],
+    "sided": true,
     "armor": [
       { "encumbrance": 2, "coverage": 95, "covers": [ "torso" ] },
       {
@@ -1694,7 +1695,7 @@
       {
         "encumbrance": 1,
         "coverage": 100,
-        "covers": [ "arm_l", "arm_r" ],
+        "covers": [ "arm_r" ],
         "specifically_covers": [ "arm_elbow_r", "arm_lower_r" ]
       }
     ]
