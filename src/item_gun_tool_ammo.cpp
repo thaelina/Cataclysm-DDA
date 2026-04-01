@@ -1977,7 +1977,17 @@ item *item::magazine_current()
 
 const item *item::magazine_current() const
 {
-    return const_cast<item *>( this )->magazine_current();
+    return contents.magazine_current();
+}
+
+std::vector<item *> item::magazines_current()
+{
+    return contents.magazines_current();
+}
+
+std::vector<const item *> item::magazines_current() const
+{
+    return contents.magazines_current();
 }
 
 std::vector<item *> item::gunmods()
