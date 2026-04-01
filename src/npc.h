@@ -174,7 +174,8 @@ enum npc_mission : int {
     NPC_MISSION_GUARD, // Assigns a non-allied NPC to remain in place
     NPC_MISSION_GUARD_PATROL, // Assigns a non-allied NPC to guard and investigate
     NPC_MISSION_ACTIVITY, // Perform a player_activity until it is complete
-    NPC_MISSION_TRAVELLING
+    NPC_MISSION_TRAVELLING,
+    NPC_MISSION_CAMP_RESIDENT // Attached to camp, works jobs + has free time
 };
 
 struct npc_companion_mission {
@@ -1356,6 +1357,8 @@ class npc : public Character
         // A temp variable used to link to the correct mission
         std::vector<mission_type_id> miss_ids;
         std::optional<tripoint_abs_omt> assigned_camp = std::nullopt;
+        // AI throttle for camp job scanning. Transient, not serialized.
+        time_point last_job_scan = calendar::turn_zero;
 
         // accessors to ai_cache functions
         const std::vector<weak_ptr_fast<Creature>> &get_cached_friends() const;

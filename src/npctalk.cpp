@@ -1088,7 +1088,7 @@ void game::chat( const std::optional<tripoint_bub_ms> &p )
 
     const std::vector<npc *> available_for_activities = get_npcs_if( [&]( const npc & guy ) {
         return guy.is_player_ally() && guy.can_hear( player_character.pos_bub(), volume ) &&
-               guy.companion_mission_role_id != "FACTION CAMP";
+               guy.companion_mission_role_id != "FACTION_CAMP";
     } );
     const int available_for_activities_count = available_for_activities.size();
 
@@ -8320,6 +8320,7 @@ void talk_effect_t::parse_string_effect( const std::string &effect_id, const Jso
             WRAP( assign_camp ),
             WRAP( abandon_camp ),
             WRAP( stop_guard ),
+            WRAP( return_to_camp_duties ),
             WRAP( start_camp ),
             WRAP( buy_cow ),
             WRAP( buy_chicken ),
