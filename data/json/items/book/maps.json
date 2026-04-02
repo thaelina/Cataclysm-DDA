@@ -751,6 +751,83 @@
     "volume": "5 ml"
   },
   {
+    "type": "ITEM",
+    "id": "inner_cabins_depths_note_3",
+    "name": "strange subway map",
+    "category": "maps",
+    "symbol": ",",
+    "color": "white",
+    "description": "A subway map covered in strange symbols and sketches.",
+    "price": "0 cent",
+    "price_postapoc": "0 cent",
+    "material": [ "paper" ],
+    "flags": [ "PAPER_SHAPED" ],
+    "weight": "5 g",
+    "volume": "5 ml",
+    "use_action": {
+      "type": "effect_on_conditions",
+      "menu_text": "Study the map",
+      "description": "Study the map",
+      "effect_on_conditions": [
+        {
+          "id": "EOC_INNER_CABINS_DEPTHS_NOTE_3",
+          "condition": {
+            "and": [
+              "u_can_see",
+              {
+                "or": [ { "u_has_flag": "READ_IN_DARKNESS" }, { "math": [ "u_val('fine_detail_vision_mod') <= 4" ] } ]
+              }
+            ]
+          },
+          "effect": [
+            {
+              "u_message": "This was once clearly a subway map, but it has a labyrinthian overlay, and a hand-drawn yellow circle of some destination.  While you do not understand the symbols, you think you can discern direction and distance.  You make a note of the location.",
+              "popup": true
+            },
+            { "math": [ "inner_cabins_destination_choice = rand(4)" ] },
+            {
+              "if": { "math": [ "inner_cabins_destination_choice == 0" ] },
+              "then": { "assign_mission": "MISSION_INNER_CABINS_GO_TO_DEPTHS_3a" }
+            },
+            {
+              "if": { "math": [ "inner_cabins_destination_choice == 1" ] },
+              "then": { "assign_mission": "MISSION_INNER_CABINS_GO_TO_DEPTHS_3b" }
+            },
+            {
+              "if": { "math": [ "inner_cabins_destination_choice == 2" ] },
+              "then": { "assign_mission": "MISSION_INNER_CABINS_GO_TO_DEPTHS_3c" }
+            },
+            {
+              "if": { "math": [ "inner_cabins_destination_choice == 3" ] },
+              "then": { "assign_mission": "MISSION_INNER_CABINS_GO_TO_DEPTHS_3d" }
+            },
+            {
+              "if": { "math": [ "inner_cabins_destination_choice == 4" ] },
+              "then": { "assign_mission": "MISSION_INNER_CABINS_GO_TO_DEPTHS_3e" }
+            },
+            { "transform_item": "inner_cabins_depths_note_3_used" }
+          ],
+          "false_effect": { "u_message": "It's too dark to read." }
+        }
+      ]
+    }
+  },
+  {
+    "type": "ITEM",
+    "id": "inner_cabins_depths_note_3_used",
+    "name": { "str": "strange subway map (used)", "str_pl": "strange subway maps (used)" },
+    "category": "maps",
+    "symbol": ",",
+    "color": "white",
+    "description": "A subway map covered in strange symbols and sketches.  You've already searched it for useful information.",
+    "price": "0 cent",
+    "price_postapoc": "0 cent",
+    "material": [ "paper" ],
+    "flags": [ "PAPER_SHAPED" ],
+    "weight": "5 g",
+    "volume": "5 ml"
+  },
+  {
     "id": "godco_flier",
     "copy-from": "abstractmap",
     "type": "ITEM",
