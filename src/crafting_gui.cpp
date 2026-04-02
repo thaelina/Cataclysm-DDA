@@ -1147,13 +1147,13 @@ void crafting_ui_impl::draw_recipe_info_panel()
         }
         if( !avail.can_craft && !avail.has_proficiencies ) {
             cataimgui::TextColoredParagraphNewline( c_red,
-                    _( "Cannot craft: crafter lacks required proficiencies." ) );
+                                                    _( "Cannot craft: crafter lacks required proficiencies." ) );
         }
         if( !avail.crafter_has_primary_skill ) {
             cataimgui::TextColoredParagraphNewline( c_red,
-                    recp.is_practice()
-                    ? _( "Crafter lacks theoretical knowledge to practice this." )
-                    : _( "Crafter lacks theoretical knowledge for this recipe." ) );
+                                                    recp.is_practice()
+                                                    ? _( "Crafter lacks theoretical knowledge to practice this." )
+                                                    : _( "Crafter lacks theoretical knowledge for this recipe." ) );
         }
 
         // Complex/overlapping requirement warnings
@@ -1161,8 +1161,8 @@ void crafting_ui_impl::draw_recipe_info_panel()
             const bool too_complex = recp.deduped_requirements().is_too_complex();
             if( avail.can_craft && too_complex ) {
                 cataimgui::TextColoredParagraphNewline( c_yellow,
-                    _( "Due to the complex overlapping requirements, this recipe "
-                       "may appear to be craftable when it is not." ) );
+                                                        _( "Due to the complex overlapping requirements, this recipe "
+                                                                "may appear to be craftable when it is not." ) );
             }
             std::string npc_reason;
             const bool npc_cant = avail.crafter.is_npc()
@@ -1171,8 +1171,8 @@ void crafting_ui_impl::draw_recipe_info_panel()
             if( !avail.can_craft && avail.apparently_craftable
                 && !npc_cant ) {
                 cataimgui::TextColoredParagraphNewline( c_red,
-                    _( "Cannot be crafted because the same item is needed "
-                       "for multiple components." ) );
+                                                        _( "Cannot be crafted because the same item is needed "
+                                                                "for multiple components." ) );
             }
             if( !avail.can_craft && npc_cant ) {
                 cataimgui::TextColoredParagraphNewline( c_red, npc_reason );
