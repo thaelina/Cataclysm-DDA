@@ -240,7 +240,9 @@
     "type": "effect_on_condition",
     "id": "EOC_clearmissions",
     "//": "This EOC wipes all missions you might have.  It's more or less a full list of any random missions you can be assigned.",
+    "//1": "Adding find refugee center mission here",
     "effect": [
+      { "remove_active_mission": "MISSION_REACH_REFUGEE_CENTER" },
       { "remove_active_mission": "MISSION_REACH_EXTRACT" },
       { "remove_active_mission": "MISSION_BONUS_TREASURE" },
       { "remove_active_mission": "MISSION_BONUS_KILL_LIGHT" },
