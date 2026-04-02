@@ -230,6 +230,8 @@ static input_context make_crafting_context( bool highlight_unread_recipes )
     ctxt.register_action( "HELP_RECIPE" );
     ctxt.register_action( "HELP_KEYBINDINGS" );
     ctxt.register_action( "CYCLE_BATCH" );
+    ctxt.register_action( "BATCH_SIZE_UP" );
+    ctxt.register_action( "BATCH_SIZE_DOWN" );
     ctxt.register_action( "CHOOSE_CRAFTER" );
     ctxt.register_action( "RELATED_RECIPES" );
     ctxt.register_action( "HIDE_SHOW_RECIPE" );
@@ -688,6 +690,9 @@ void crafting_ui_impl::draw_controls()
 
             ImGui::TableNextColumn();
             draw_recipe_info_panel();
+            if( info_nav_active && info_nav_cursor >= info_nav_count ) {
+                info_nav_cursor = std::max( 0, info_nav_count - 1 );
+            }
 
             if( is_wide ) {
                 ImGui::TableNextColumn();
@@ -840,8 +845,9 @@ void crafting_ui_impl::draw_recipe_list()
         }
     }
 
-    if( ImGui::BeginListBox( "##RECIPES", ImVec2( avail_width,
-                             ImGui::GetContentRegionAvail().y ) ) ) {
+    if( ImGui::BeginChild( "##RECIPES", ImVec2( avail_width,
+                           ImGui::GetContentRegionAvail().y ),
+                           ImGuiChildFlags_FrameStyle, ImGuiWindowFlags_NoNav ) ) {
         ImGuiListClipper clipper;
         clipper.Begin( static_cast<int>( current.size() ) );
         if( need_scroll_to_selected && line >= 0
@@ -897,8 +903,8 @@ void crafting_ui_impl::draw_recipe_list()
                 ImGui::PopID();
             }
         }
-        ImGui::EndListBox();
     }
+    ImGui::EndChild();
 }
 
 // --- draw_recipe_info_panel ---
@@ -962,7 +968,7 @@ void crafting_ui_impl::draw_recipe_info_panel()
             }
 
             if( show_minus ) {
-                if( nav_clickable( "-", c_dark_gray ) ) {
+                if( clickable_text( "-", c_dark_gray ) ) {
                     pending_batch_delta = -1;
                 }
                 ImGui::SameLine( 0, space );
@@ -979,7 +985,7 @@ void crafting_ui_impl::draw_recipe_info_panel()
 
             if( show_plus ) {
                 ImGui::SameLine( 0, space );
-                if( nav_clickable( "+", c_dark_gray ) ) {
+                if( clickable_text( "+", c_dark_gray ) ) {
                     pending_batch_delta = 1;
                 }
             }
@@ -2138,25 +2144,33 @@ void crafting_ui_impl::rebuild_keybinding_tips()
         act_descs.emplace_back(
             ctxt_ptr->get_desc( act, txt, input_context::allow_all_keys ) );
     };
-    add_action_desc( "CONFIRM", pgettext( "crafting gui", "Craft" ) );
-    add_action_desc( "HELP_RECIPE", pgettext( "crafting gui", "Describe" ) );
-    add_action_desc( "FILTER", pgettext( "crafting gui", "Filter" ) );
-    add_action_desc( "RESET_FILTER", pgettext( "crafting gui", "Reset filter" ) );
-    if( highlight_unread ) {
-        add_action_desc( "TOGGLE_RECIPE_UNREAD", pgettext( "crafting gui", "Read/unread" ) );
-        add_action_desc( "MARK_ALL_RECIPES_READ", pgettext( "crafting gui", "Mark all as read" ) );
-        add_action_desc( "TOGGLE_UNREAD_RECIPES_FIRST",
-                         pgettext( "crafting gui", "Show unread recipes first" ) );
+    if( info_nav_active ) {
+        add_action_desc( "CONFIRM", pgettext( "crafting gui", "Activate" ) );
+        add_action_desc( "TOGGLE_INFO_NAV", pgettext( "crafting gui", "Exit nav" ) );
+        add_action_desc( "QUIT", pgettext( "crafting gui", "Back" ) );
+    } else {
+        add_action_desc( "CONFIRM", pgettext( "crafting gui", "Craft" ) );
+        add_action_desc( "HELP_RECIPE", pgettext( "crafting gui", "Describe" ) );
+        add_action_desc( "FILTER", pgettext( "crafting gui", "Filter" ) );
+        add_action_desc( "RESET_FILTER", pgettext( "crafting gui", "Reset filter" ) );
+        if( highlight_unread ) {
+            add_action_desc( "TOGGLE_RECIPE_UNREAD", pgettext( "crafting gui", "Read/unread" ) );
+            add_action_desc( "MARK_ALL_RECIPES_READ", pgettext( "crafting gui", "Mark all as read" ) );
+            add_action_desc( "TOGGLE_UNREAD_RECIPES_FIRST",
+                             pgettext( "crafting gui", "Show unread recipes first" ) );
+        }
+        add_action_desc( "HIDE_SHOW_RECIPE", pgettext( "crafting gui", "Show/hide" ) );
+        add_action_desc( "RELATED_RECIPES", pgettext( "crafting gui", "Related" ) );
+        add_action_desc( "TOGGLE_FAVORITE", pgettext( "crafting gui", "Favorite" ) );
+        add_action_desc( "CYCLE_BATCH", pgettext( "crafting gui", "Batch" ) );
+        add_action_desc( "BATCH_SIZE_UP", pgettext( "crafting gui", "Batch +" ) );
+        add_action_desc( "BATCH_SIZE_DOWN", pgettext( "crafting gui", "Batch -" ) );
+        add_action_desc( "CHOOSE_CRAFTER", pgettext( "crafting gui", "Choose crafter" ) );
+        add_action_desc( "PRIORITIZE_MISSING_COMPONENTS", pgettext( "crafting gui", "Prioritize" ) );
+        add_action_desc( "DEPRIORITIZE_COMPONENTS", pgettext( "crafting gui", "Deprioritize" ) );
+        add_action_desc( "TOGGLE_INFO_NAV", pgettext( "crafting gui", "Navigate details" ) );
+        add_action_desc( "HELP_KEYBINDINGS", pgettext( "crafting gui", "Keybindings" ) );
     }
-    add_action_desc( "HIDE_SHOW_RECIPE", pgettext( "crafting gui", "Show/hide" ) );
-    add_action_desc( "RELATED_RECIPES", pgettext( "crafting gui", "Related" ) );
-    add_action_desc( "TOGGLE_FAVORITE", pgettext( "crafting gui", "Favorite" ) );
-    add_action_desc( "CYCLE_BATCH", pgettext( "crafting gui", "Batch" ) );
-    add_action_desc( "CHOOSE_CRAFTER", pgettext( "crafting gui", "Choose crafter" ) );
-    add_action_desc( "PRIORITIZE_MISSING_COMPONENTS", pgettext( "crafting gui", "Prioritize" ) );
-    add_action_desc( "DEPRIORITIZE_COMPONENTS", pgettext( "crafting gui", "Deprioritize" ) );
-    add_action_desc( "TOGGLE_INFO_NAV", pgettext( "crafting gui", "Navigate details" ) );
-    add_action_desc( "HELP_KEYBINDINGS", pgettext( "crafting gui", "Keybindings" ) );
 
     keybinding_tips = enumerate_as_string( act_descs, enumeration_conjunction::none );
 }
@@ -2316,7 +2330,10 @@ void crafting_ui_impl::invalidate_info_panels()
     need_scroll_to_selected = true;
     expanded_tool_groups.clear();
     expanded_comp_groups.clear();
-    info_nav_active = false;
+    if( info_nav_active ) {
+        info_nav_active = false;
+        rebuild_keybinding_tips();
+    }
     steps_expanded = true;
 }
 
@@ -2333,8 +2350,11 @@ void crafting_ui_impl::process_action( const std::string &action_in,
     just_toggled_unread = false;
 
     // Consume pending line click (tab/subtab intents are handled inline in draw_controls)
-    // Suppress clicks while info-nav is active to preserve modality.
-    if( pending_line_click >= 0 && !info_nav_active ) {
+    if( pending_line_click >= 0 && info_nav_active ) {
+        info_nav_active = false;
+        rebuild_keybinding_tips();
+    }
+    if( pending_line_click >= 0 ) {
         if( pending_line_click == line ) {
             action = "CONFIRM";
         } else {
@@ -2409,19 +2429,25 @@ void crafting_ui_impl::process_action( const std::string &action_in,
                                         std::max( 0, info_nav_count - 1 ) );
         } else if( action == "UP" ) {
             info_nav_cursor = std::max( info_nav_cursor - 1, 0 );
-        } else if( action == "CONFIRM" || action == "TOGGLE_INFO_NAV" ) {
+        } else if( action == "CONFIRM" ) {
             info_nav_activated = info_nav_cursor;
-        } else if( action == "QUIT" ) {
+        } else if( action == "TOGGLE_INFO_NAV" || action == "QUIT" ) {
             info_nav_active = false;
+            rebuild_keybinding_tips();
         } else if( action == "PAGE_UP" ) {
             recipe_info_scroll = cataimgui::scroll::page_up;
         } else if( action == "PAGE_DOWN" ) {
             recipe_info_scroll = cataimgui::scroll::page_down;
+        } else if( action == "BATCH_SIZE_UP" ) {
+            pending_batch_delta = 1;
+        } else if( action == "BATCH_SIZE_DOWN" ) {
+            pending_batch_delta = -1;
         }
     } else if( action == "TOGGLE_INFO_NAV" ) {
         handled_by_nav = true;
         info_nav_active = true;
         info_nav_cursor = 0;
+        rebuild_keybinding_tips();
     }
 
     // Auto-mark-read on cursor movement
@@ -2715,6 +2741,22 @@ void crafting_ui_impl::process_action( const std::string &action_in,
         uistate.read_recipes.insert( current[line]->ident() );
         recalc_unread = highlight_unread;
         deprioritize_components( *current[line] );
+    } else if( action == "BATCH_SIZE_UP" ) {
+        pending_batch_delta = 1;
+    } else if( action == "BATCH_SIZE_DOWN" ) {
+        pending_batch_delta = -1;
+    } else if( action == "QUIT" ) {
+        if( batch ) {
+            batch = false;
+            manual_batch = 1;
+            keepline = true;
+            recalc = true;
+        } else if( !filterstring.empty() ) {
+            filterstring.clear();
+            recalc = true;
+        } else {
+            done = true;
+        }
     } else if( action == "HELP_KEYBINDINGS" ) {
         // Rebuild keybinding tips after keybinding editor
         rebuild_keybinding_tips();
@@ -2761,9 +2803,6 @@ std::pair<Character *, const recipe *> select_crafter_and_crafting_recipe( int &
     while( !impl.is_done() ) {
         ui_manager::redraw_invalidated();
         std::string action = ctxt.handle_input();
-        if( action == "QUIT" && !impl.is_info_nav() ) {
-            return { nullptr, nullptr };
-        }
         if( !impl.get_is_open() ) {
             return { nullptr, nullptr };
         }
