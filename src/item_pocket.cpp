@@ -717,6 +717,14 @@ item *item_pocket::magazine_current()
     return iter != contents.end() ? &*iter : nullptr;
 }
 
+const item *item_pocket::magazine_current() const
+{
+    auto iter = std::find_if( contents.begin(), contents.end(), []( const item & it ) {
+        return !it.is_null();
+    } );
+    return iter != contents.end() ? &*iter : nullptr;
+}
+
 itype_id item_pocket::magazine_default() const
 {
     if( is_type( pocket_type::MAGAZINE_WELL ) ) {
