@@ -655,6 +655,8 @@ class cata_tiles
         void init_draw_hit( const Creature &critter );
         void draw_hit_frame();
         void void_hit();
+        // Prune expired hit animations.  Returns true if any were removed.
+        bool expire_hit_animations();
 
         void draw_footsteps_frame( const tripoint_bub_ms &center );
 
@@ -687,7 +689,7 @@ class cata_tiles
 
         void init_draw_async_anim( const tripoint_bub_ms &p, const std::string &tile_id );
         void draw_async_anim();
-        void void_async_anim();
+        bool void_async_anim();
 
         void init_draw_radiation_override( const tripoint_bub_ms &p, int rad );
         void void_radiation_override();
