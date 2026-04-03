@@ -5530,6 +5530,9 @@ std::optional<int> weigh_self_actor::use( Character *p, item &, map *,
     if( weight > convert_weight( max_weight ) ) {
         popup( _( "ERROR: Max weight of %.0f %s exceeded" ), convert_weight( max_weight ), weight_units() );
     } else {
+        p->set_value( "last_weighting_weight_kg", units::to_kilogram( p->bodyweight_with_bionic() ) );
+        p->set_value( "last_weighting_time", to_turn<int>( calendar::turn ) );
+
         popup( "%.0f %s", weight, weight_units() );
     }
     return 0;

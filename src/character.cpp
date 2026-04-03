@@ -3170,6 +3170,15 @@ units::mass Character::get_weight() const
     return enchantment_cache->modify_value( enchant_vals::mod::TOTAL_WEIGHT, ret );
 }
 
+units::mass Character::bodyweight_with_bionic() const
+{
+    units::mass ret = 0_gram;
+
+    ret += bodyweight();       // The base weight of the player's body
+    ret += bionics_weight();       // Weight of installed bionics
+    return enchantment_cache->modify_value( enchant_vals::mod::TOTAL_WEIGHT, ret );
+}
+
 int Character::avg_encumb_of_limb_type( bp_type part_type ) const
 {
     float limb_encumb = 0.0f;
