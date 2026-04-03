@@ -1394,13 +1394,13 @@ TEST_CASE( "npc_find_nearby_water_sources", "[npc][needs]" )
     }
 
     SECTION( "sorted by distance, closest first" ) {
-        tripoint_bub_ms near = guy.pos_bub() + tripoint::east;
-        tripoint_bub_ms far = guy.pos_bub() + tripoint( 4, 0, 0 );
-        here.ter_set( far, ter_t_water_sh );
-        here.ter_set( near, ter_t_water_sh );
+        tripoint_bub_ms close = guy.pos_bub() + tripoint::east;
+        tripoint_bub_ms distant = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( close, ter_t_water_sh );
+        here.ter_set( distant, ter_t_water_sh );
         std::vector<npc::scored_water_source> sources = guy.find_nearby_water_sources();
         REQUIRE( sources.size() >= 2 );
-        CHECK( sources[0].pos == near );
+        CHECK( sources[0].pos == close );
         CHECK( sources[0].dist <= sources[1].dist );
     }
 
@@ -1497,8 +1497,8 @@ TEST_CASE( "npc_find_nearby_food", "[npc][needs]" )
     }
 
     SECTION( "does not find food beyond 6 tiles" ) {
-        tripoint_bub_ms far = guy.pos_bub() + tripoint( 7, 0, 0 );
-        here.add_item_or_charges( far, item( itype_sandwich_cheese_grilled ) );
+        tripoint_bub_ms distant = guy.pos_bub() + tripoint( 7, 0, 0 );
+        here.add_item_or_charges( distant, item( itype_sandwich_cheese_grilled ) );
         CHECK( guy.find_nearby_food().empty() );
     }
 
@@ -2102,12 +2102,12 @@ TEST_CASE( "npc_find_nearby_shelters", "[npc][needs]" )
     }
 
     SECTION( "finds indoor tile at distance 4" ) {
-        const tripoint_bub_ms far = guy.pos_bub() + tripoint( 4, 0, 0 );
-        here.ter_set( far, ter_t_floor );
+        const tripoint_bub_ms distant = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( distant, ter_t_floor );
         here.build_map_cache( 0 );
         auto shelters = guy.find_nearby_shelters();
         REQUIRE_FALSE( shelters.empty() );
-        CHECK( shelters[0].pos == far );
+        CHECK( shelters[0].pos == distant );
     }
 
     SECTION( "ignores indoor tile beyond 6" ) {
@@ -2118,10 +2118,10 @@ TEST_CASE( "npc_find_nearby_shelters", "[npc][needs]" )
     }
 
     SECTION( "returns closest first when multiple" ) {
-        const tripoint_bub_ms near = guy.pos_bub() + point::east;
-        const tripoint_bub_ms far = guy.pos_bub() + tripoint( 4, 0, 0 );
-        here.ter_set( far, ter_t_floor );
-        here.ter_set( near, ter_t_floor );
+        const tripoint_bub_ms close = guy.pos_bub() + point::east;
+        const tripoint_bub_ms distant = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( distant, ter_t_floor );
+        here.ter_set( close, ter_t_floor );
         here.build_map_cache( 0 );
         auto shelters = guy.find_nearby_shelters();
         REQUIRE( shelters.size() >= 2 );
@@ -2216,38 +2216,38 @@ TEST_CASE( "npc_shelter_pathfinding", "[npc][needs]" )
     SECTION( "unreachable nearest shelter, falls through to reachable second" ) {
         guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
         // Nearest shelter in double-thick glass enclosure (unreachable).
-        const tripoint_bub_ms near = guy.pos_bub() + tripoint( 4, 0, 0 );
-        here.ter_set( near, ter_t_floor );
+        const tripoint_bub_ms close = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( close, ter_t_floor );
         for( int r = 1; r <= 2; ++r ) {
-            for( const tripoint_bub_ms &w : here.points_in_radius( near, r ) ) {
-                if( w != near && !here.has_flag( ter_furn_flag::TFLAG_INDOORS, w ) ) {
+            for( const tripoint_bub_ms &w : here.points_in_radius( close, r ) ) {
+                if( w != close && !here.has_flag( ter_furn_flag::TFLAG_INDOORS, w ) ) {
                     here.ter_set( w, ter_t_wall_glass );
                 }
             }
         }
         // Second shelter reachable (open), opposite direction.
-        const tripoint_bub_ms far = guy.pos_bub() + tripoint( -3, 0, 0 );
-        here.ter_set( far, ter_t_floor );
+        const tripoint_bub_ms distant = guy.pos_bub() + tripoint( -3, 0, 0 );
+        here.ter_set( distant, ter_t_floor );
         here.build_map_cache( 0 );
-        const int dist_to_far = rl_dist( guy.pos_bub(), far );
+        const int dist_to_far = rl_dist( guy.pos_bub(), distant );
 
         CHECK( guy.take_shelter_nearby() );
-        CHECK( rl_dist( guy.pos_bub(), far ) < dist_to_far );
+        CHECK( rl_dist( guy.pos_bub(), distant ) < dist_to_far );
     }
 
     SECTION( "occupied nearest shelter skipped, next candidate used" ) {
         guy.set_all_parts_temp_conv( BODYTEMP_VERY_COLD );
-        const tripoint_bub_ms near = guy.pos_bub() + point::east;
-        here.ter_set( near, ter_t_floor );
-        spawn_test_monster( "mon_zombie", near );
-        const tripoint_bub_ms far = guy.pos_bub() + tripoint( 0, 3, 0 );
-        here.ter_set( far, ter_t_floor );
+        const tripoint_bub_ms close = guy.pos_bub() + point::east;
+        here.ter_set( close, ter_t_floor );
+        spawn_test_monster( "mon_zombie", close );
+        const tripoint_bub_ms distant = guy.pos_bub() + tripoint( 0, 3, 0 );
+        here.ter_set( distant, ter_t_floor );
         here.build_map_cache( 0 );
-        const int dist_to_far = rl_dist( guy.pos_bub(), far );
+        const int dist_to_far = rl_dist( guy.pos_bub(), distant );
 
         guy.address_needs( 0 );
 
-        CHECK( rl_dist( guy.pos_bub(), far ) < dist_to_far );
+        CHECK( rl_dist( guy.pos_bub(), distant ) < dist_to_far );
     }
 }
 
@@ -2398,12 +2398,12 @@ TEST_CASE( "npc_find_nearby_harvestable", "[npc][needs]" )
     }
 
     SECTION( "finds forageable terrain at distance 4" ) {
-        const tripoint_bub_ms far = guy.pos_bub() + tripoint( 4, 0, 0 );
-        here.ter_set( far, ter_t_underbrush );
+        const tripoint_bub_ms distant = guy.pos_bub() + tripoint( 4, 0, 0 );
+        here.ter_set( distant, ter_t_underbrush );
         here.build_map_cache( 0 );
         auto h = guy.find_nearby_harvestable();
         REQUIRE_FALSE( h.empty() );
-        CHECK( h[0].pos == far );
+        CHECK( h[0].pos == distant );
     }
 
     SECTION( "ignores non-harvestable terrain" ) {
