@@ -1986,6 +1986,21 @@ Opens the menu to swap the avatar
 "effect": [ "take_control_menu" ]
 ```
 
+#### `u_make_radio_representative` `npc_make_radio_representative`
+Sets alpha or beta talker as faction representative, allowing avatar to contact them, if both NPC and avatar has a charged radio
+It will open `talk_radio` dialogue, so remember to change the topic of NPC you want to make a representative, otherwise the default `TALK_RADIO` will be set, used for your followers
+
+##### Valid talkers:
+
+| Avatar | NPC | Monster | Furniture | Item | Vehicle |
+| ------ | --------- | ---- | ------- | --- | ---- |
+| ❌ | ✔️ | ❌ | ❌ | ❌ | ❌ |
+
+##### Examples
+Sets NPC to be faction representative
+```jsonc
+"effect": [ "npc_make_radio_representative" ]
+```
 
 #### `give_achievement`
 Marks the given achievement as complete

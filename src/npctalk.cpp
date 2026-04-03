@@ -5550,6 +5550,20 @@ talk_effect_fun_t::func f_take_control_menu()
     };
 }
 
+talk_effect_fun_t::func f_make_radio_representative( const bool is_beta )
+{
+    return [is_beta]( dialogue const & d ) {
+        npc *guy = d.actor( is_beta )->get_npc();
+        if( guy != nullptr ) {
+            guy->faction_representative = true;
+            get_avatar().faction_representatives.insert( guy->as_character()->getID() );
+        } else {
+            debugmsg( "Trying to make radio representative, but %s talker is nullptr.  %s",
+                      is_beta ? "beta" : "alpha", d.get_callstack() );
+        }
+    };
+}
+
 talk_effect_fun_t::func f_sound_effect( const JsonObject &jo, std::string_view member,
                                         std::string_view )
 {
@@ -8462,6 +8476,14 @@ void talk_effect_t::parse_string_effect( const std::string &effect_id, const Jso
     }
     if( effect_id == "take_control_menu" ) {
         set_effect( talk_effect_fun_t( talk_effect_fun::f_take_control_menu() ) );
+        return;
+    }
+    if( effect_id == "u_make_radio_representative" ) {
+        set_effect( talk_effect_fun_t( talk_effect_fun::f_make_radio_representative( false ) ) );
+        return;
+    }
+    if( effect_id == "npc_make_radio_representative" ) {
+        set_effect( talk_effect_fun_t( talk_effect_fun::f_make_radio_representative( true ) ) );
         return;
     }
     if( effect_id == "u_wants_to_talk" ) {

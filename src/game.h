@@ -1260,8 +1260,6 @@ class game
         character_id next_npc_id; // NOLINT(cata-serialize)
         int next_mission_id = 0; // NOLINT(cata-serialize)
         int64_t next_item_uid = 1; // NOLINT(cata-serialize)
-        // Keep track of follower NPC IDs
-        std::set<character_id> follower_ids; // NOLINT(cata-serialize)
 
         std::chrono::seconds time_played_at_last_load; // NOLINT(cata-serialize)
         // NOLINTNEXTLINE(cata-serialize)
