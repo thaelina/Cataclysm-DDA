@@ -2758,6 +2758,7 @@ void crafting_ui_impl::process_action( const std::string &action_in,
             filterstring.clear();
             recalc = true;
         } else {
+            chosen = nullptr;
             done = true;
         }
     } else if( action == "HELP_KEYBINDINGS" ) {
