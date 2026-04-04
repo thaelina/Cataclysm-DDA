@@ -6448,6 +6448,7 @@ void harvest_activity_actor::finish( player_activity &act, Character &who )
 
     if( !got_anything ) {
         who.add_msg_if_player( m_bad, _( "You couldn't harvest anything." ) );
+        who.add_msg_if_npc( m_bad, _( "<npcname> couldn't harvest anything." ) );
     }
 
     if( exam_furn ) {
@@ -9808,7 +9809,8 @@ void forage_activity_actor::finish( player_activity &act, Character &who )
             } else if( it->has_flag( flag_FORAGE_HALLU ) && one_in( 10 ) ) {
                 it->set_flag( flag_HIDDEN_HALLU );
             }
-            add_msg( m_good, _( "You found: %s!" ), it->display_name() );
+            who.add_msg_if_player( m_good, _( "You found: %s!" ), it->display_name() );
+            who.add_msg_if_npc( m_good, _( "<npcname> found: %s!" ), it->display_name() );
         }
     }
     // 10% to drop a item/items from this group.
@@ -9823,13 +9825,15 @@ void forage_activity_actor::finish( player_activity &act, Character &who )
                 continue;
             }
             handled.push_back( it );
-            add_msg( m_good, _( "You found: %s!" ), it->display_name() );
+            who.add_msg_if_player( m_good, _( "You found: %s!" ), it->display_name() );
+            who.add_msg_if_npc( m_good, _( "<npcname> found: %s!" ), it->display_name() );
             found_something = true;
         }
     }
 
     if( !found_something ) {
-        add_msg( _( "You didn't find anything." ) );
+        who.add_msg_if_player( _( "You didn't find anything." ) );
+        who.add_msg_if_npc( _( "<npcname> didn't find anything." ) );
     }
 
     iexamine::practice_survival_while_foraging( who );
