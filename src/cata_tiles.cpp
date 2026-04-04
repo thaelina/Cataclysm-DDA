@@ -1344,6 +1344,8 @@ void cata_tiles::draw( const point &dest, const tripoint_bub_ms &center, int wid
     }
 #endif
 
+    has_animated_tiles_ = false;
+
     {
         //set clipping to prevent drawing over stuff we shouldn't
         SDL_Rect clipRect = {dest.x, dest.y, width, height};
@@ -3023,6 +3025,7 @@ bool cata_tiles::draw_from_id_string_internal( const std::string &id, TILE_CATEG
 
         // idle tile animations:
         if( display_tile.animated ) {
+            has_animated_tiles_ = true;
             // idle animations run during the user's turn, and the animation speed
             // needs to be defined by the tileset to look good, so we use system clock:
             std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
