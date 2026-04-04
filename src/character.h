@@ -980,6 +980,8 @@ class Character : public Creature, public visitable
         /** Returns body weight plus weight of inventory and worn/wielded items */
         units::mass get_weight() const override;
 
+        units::mass bodyweight_with_bionic() const;
+
         // formats and prints encumbrance info to specified window
         void print_encumbrance( ui_adaptor &ui, const catacurses::window &win, int line = -1,
                                 const item *selected_clothing = nullptr ) const;
