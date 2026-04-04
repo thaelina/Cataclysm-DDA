@@ -36,6 +36,7 @@
 #include "rng.h"
 #include "stomach.h"
 #include "string_formatter.h"
+#include "subbodypart.h"
 #include "translation.h"
 #include "translations.h"
 #include "type_id.h"
@@ -1579,4 +1580,18 @@ void Character::update_respiration_rate()
     const int effect_mod = get_respiration_effect_mod();
     constexpr float RESP_EFFECT_INT_TO_FLOAT_MULT = 0.0001f;
     respiration_rate = 1.0f + effect_mod * RESP_EFFECT_INT_TO_FLOAT_MULT;
+}
+
+bool Character::has_sub_bodypart( const sub_bodypart_id &sbp ) const
+{
+    bool character_has_sub_part = false;
+    for( const bodypart_id &part : get_all_body_parts() ) {
+        for( const sub_bodypart_id sub_part : part->sub_parts ) {
+            if( sub_part == sbp ) {
+                character_has_sub_part = true;
+                break;
+            }
+        }
+    }
+    return character_has_sub_part;
 }
