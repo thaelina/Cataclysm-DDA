@@ -1607,6 +1607,10 @@
     "type": "json_flag"
   },
   {
+    "id": "IMPERIAL_ROAD_KEY",
+    "type": "json_flag"
+  },
+  {
     "id": "INEDIBLE",
     "type": "json_flag"
   },
