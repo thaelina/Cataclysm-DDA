@@ -1306,12 +1306,14 @@ void crafting_ui_impl::draw_recipe_info_panel()
                     int tool_group_offset = 0;
                     float step_indent = ImGui::CalcTextSize( "    " ).x;
                     float sub_indent = ImGui::CalcTextSize( "  " ).x;
-                    const std::vector<float> tspeeds = compute_tool_speeds( recp, *crafter );
-                    const std::vector<float> *ts = tspeeds.empty() ? nullptr : &tspeeds;
+                    const crafting_cost_context step_ctx{
+                        crafter->book_bonuses_nearby(),
+                        compute_tool_speeds( recp, *crafter )
+                    };
                     for( size_t si = 0; si < recp.steps().size(); ++si ) {
                         const recipe_step &step = recp.steps()[si];
                         const double step_moves = recp.step_budget_moves(
-                                                      *crafter, si, batch_size, ts );
+                                                      *crafter, si, batch_size, step_ctx );
                         const std::string time_str = to_string(
                                                          time_duration::from_moves( static_cast<int64_t>( step_moves ) ) );
                         const std::string activity = display::activity_level_str( step.exertion );
@@ -1321,7 +1323,7 @@ void crafting_ui_impl::draw_recipe_info_panel()
                         std::string batch_note;
                         if( batch_size > 1 ) {
                             const double single_moves = recp.step_budget_moves(
-                                                            *crafter, si, 1, ts );
+                                                            *crafter, si, 1, step_ctx );
                             if( step_moves < single_moves * batch_size * 0.99 ) {
                                 batch_note = string_format( _( " (x%d, saves %s)" ), batch_size,
                                                             to_string( time_duration::from_moves(
@@ -1487,7 +1489,7 @@ void crafting_ui_impl::draw_modifier_table( const recipe &recp,
         // Base row
         {
             const int64_t base_moves = recp.time_to_craft_moves(
-                                           *crafter, recipe_time_flag::ignore_proficiencies );
+                                           *crafter, {}, recipe_time_flag::ignore_proficiencies );
             const std::string base_str = to_string(
                                              time_duration::from_moves( base_moves ) );
             ImGui::TableNextRow();
