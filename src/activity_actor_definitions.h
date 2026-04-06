@@ -3201,9 +3201,11 @@ class fire_start_activity_actor : public activity_actor
         fire_start_activity_actor() = default;
     public:
         fire_start_activity_actor( const tripoint_abs_ms &fire_placement, const item_location &fire_starter,
-                                   int potential_skill_gain, int initial_moves ) :
+                                   int potential_skill_gain, int initial_moves,
+                                   bool tinder_consumed = false ) :
             fire_placement( fire_placement ), fire_starter( fire_starter ),
-            potential_skill_gain( potential_skill_gain ), initial_moves( initial_moves ), used_tinder( false ) {
+            potential_skill_gain( potential_skill_gain ), initial_moves( initial_moves ),
+            used_tinder( tinder_consumed ) {
         };
         const activity_id &get_type() const override {
             static const activity_id ACT_START_FIRE( "ACT_START_FIRE" );
