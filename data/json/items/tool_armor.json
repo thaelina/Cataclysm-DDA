@@ -3136,6 +3136,7 @@
     ],
     "environmental_protection": 4,
     "environmental_protection_with_filter": 16,
+    "qualities": [ [ "GLARE", 1 ] ],
     "flags": [ "WATERPROOF", "PADDED", "OVERSIZE", "SLEEP_IGNORE", "PAPR_MASK", "SUN_GLASSES", "FLASH_PROTECTION" ],
     "pocket_data": [
       {
