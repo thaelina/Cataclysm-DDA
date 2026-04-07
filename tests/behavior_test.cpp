@@ -39,6 +39,7 @@
 #include "mtype.h"
 #include "npc.h"
 #include "npc_class.h"
+#include "options_helpers.h"
 #include "player_helpers.h"
 #include "pocket_type.h"
 #include "point.h"
@@ -246,6 +247,26 @@ TEST_CASE( "check_npc_behavior_tree", "[npc][behavior]" )
         REQUIRE( oracle.has_food( "" ) == behavior::status_t::running );
         CHECK( npc_needs.tick( &oracle ) == "eat_food" );
         food.remove_item();
+        CHECK( npc_needs.tick( &oracle ) == "idle" );
+    }
+    SECTION( "NO_NPC_FOOD suppresses hunger and thirst" ) {
+        override_option no_food( "NO_NPC_FOOD", "true" );
+        REQUIRE_FALSE( test_npc.needs_food() );
+
+        // Extreme values that would normally trigger needs.
+        test_npc.set_hunger( 500 );
+        test_npc.set_stored_kcal( 1000 );
+        test_npc.set_thirst( 700 );
+        CHECK( oracle.needs_food_badly( "" ) == behavior::status_t::success );
+        CHECK( oracle.needs_water_badly( "" ) == behavior::status_t::success );
+        CHECK( oracle.hunger_urgency( "" ) == 0.0f );
+        CHECK( oracle.thirst_urgency( "" ) == 0.0f );
+
+        // Even with food and water in inventory, BT returns idle.
+        test_npc.i_add( item( itype_sandwich_cheese_grilled ) );
+        const item_group::ItemList water_items = item_group::items_from(
+                    Item_spawn_data_test_bottle_water );
+        test_npc.i_add( water_items.front() );
         CHECK( npc_needs.tick( &oracle ) == "idle" );
     }
     SECTION( "Thirsty" ) {

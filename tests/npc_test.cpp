@@ -4465,6 +4465,23 @@ TEST_CASE( "npc_no_infinite_loop_foraging", "[npc][needs][forage]" )
         CHECK_FALSE( guy.has_effect( effect_npc_suspend ) );
     }
 
+    SECTION( "NO_NPC_FOOD NPC with stale hunger does not loop" ) {
+        override_option no_food( "NO_NPC_FOOD", "true" );
+        REQUIRE_FALSE( guy.needs_food() );
+
+        // Stale hunger/thirst values that would trigger food-seeking
+        // if the needs_food() guards were missing.
+        guy.set_hunger( 300 );
+        guy.set_thirst( 100 );
+        guy.set_stored_kcal( 1000 );
+        guy.i_add( item( itype_sandwich_cheese_grilled ) );
+
+        set_time_to_day();
+        here.build_map_cache( 0 );
+
+        CHECK_FALSE( npc_loops() );
+    }
+
     SECTION( "forage activity completes without backlog flooding" ) {
         set_time_to_day();
         here.ter_set( adj, ter_t_underbrush );
