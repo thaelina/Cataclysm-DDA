@@ -1145,8 +1145,16 @@ void crafting_ui_impl::draw_recipe_info_panel()
             cataimgui::TextColoredParagraphNewline( c_red, _( "Will use favorited ingredients" ) );
         }
         if( !avail.can_craft && !avail.has_proficiencies ) {
-            cataimgui::TextColoredParagraphNewline( c_red,
-                                                    _( "Cannot craft: crafter lacks required proficiencies." ) );
+            cataimgui::TextColoredParagraph( c_red,
+                                             _( "Missing required proficiencies: " ) );
+            auto profs = recp.required_proficiencies();
+            for( const auto &prof : profs ) {
+                cataimgui::TextColoredParagraph( c_red, prof->name() );
+                if( ( profs.size() > 1 ) && ( &prof != &profs.back() ) ) {
+                    cataimgui::TextColoredParagraph( c_red, _( ", " ) );
+                }
+            }
+            cataimgui::TextColoredParagraphNewline( c_red, "" );
         }
         if( !avail.crafter_has_primary_skill ) {
             cataimgui::TextColoredParagraphNewline( c_red,
