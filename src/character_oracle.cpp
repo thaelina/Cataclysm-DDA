@@ -49,6 +49,10 @@ status_t character_oracle_t::needs_warmth_badly( std::string_view ) const
 
 status_t character_oracle_t::needs_water_badly( std::string_view ) const
 {
+    // NO_NPC_FOOD disables thirst for NPCs.
+    if( !subject->needs_food() ) {
+        return status_t::success;
+    }
     // Check thirst threshold.
     if( subject->get_thirst() > 520 ) {
         return status_t::running;
@@ -58,6 +62,10 @@ status_t character_oracle_t::needs_water_badly( std::string_view ) const
 
 status_t character_oracle_t::needs_food_badly( std::string_view ) const
 {
+    // NO_NPC_FOOD disables hunger for NPCs.
+    if( !subject->needs_food() ) {
+        return status_t::success;
+    }
     // Short-term: stomach empty and actively starving.
     if( subject->get_hunger() >= 300 && subject->get_starvation() > base_metabolic_rate ) {
         return status_t::running;
@@ -191,6 +199,9 @@ status_t character_oracle_t::needs_sleep_badly( std::string_view ) const
 
 float character_oracle_t::thirst_urgency( std::string_view ) const
 {
+    if( !subject->needs_food() ) {
+        return 0.0f;
+    }
     // 0 = hydrated, 1 = dehydration death (threshold 1200, character_health.cpp).
     static constexpr float death_threshold = 1200.0f;
     return std::clamp( subject->get_thirst() / death_threshold, 0.0f, 1.0f );
@@ -198,6 +209,9 @@ float character_oracle_t::thirst_urgency( std::string_view ) const
 
 float character_oracle_t::hunger_urgency( std::string_view ) const
 {
+    if( !subject->needs_food() ) {
+        return 0.0f;
+    }
     // 0 = healthy weight, 1 = starvation death (stored_kcal <= 0, character_health.cpp).
     const int healthy = subject->get_healthy_kcal();
     if( healthy <= 0 ) {

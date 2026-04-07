@@ -2503,7 +2503,10 @@ void npc::execute_action( npc_action action )
 
         case npc_noop:
             add_msg_debug( debugmode::DF_NPC, "%s skips turn (noop)", disp_name() );
-            return;
+            if( oldmoves == moves ) {
+                move_pause();
+            }
+            break;
 
         default:
             debugmsg( "Unknown NPC action (%d)", action );
@@ -3107,8 +3110,8 @@ npc_action npc::address_needs( float danger )
     }
 
     // Extreme thirst or hunger, bypass safety check.
-    if( get_thirst() > 80 ||
-        get_stored_kcal() + stomach.get_calories() < get_healthy_kcal() * 0.75 ) {
+    if( needs_food() && ( get_thirst() > 80 ||
+                          get_stored_kcal() + stomach.get_calories() < get_healthy_kcal() * 0.75 ) ) {
         if( consume_food_from_camp() ) {
             return npc_noop;
         }
@@ -3157,8 +3160,8 @@ npc_action npc::address_needs( float danger )
     // Extreme food/water pathing: the pre-gate block only consumed adjacent
     // resources. If extreme need persists and we passed the danger gate,
     // path to distant ground food or water deterministically.
-    if( get_thirst() > 80 ||
-        get_stored_kcal() + stomach.get_calories() < get_healthy_kcal() * 0.75 ) {
+    if( needs_food() && ( get_thirst() > 80 ||
+                          get_stored_kcal() + stomach.get_calories() < get_healthy_kcal() * 0.75 ) ) {
         for( scored_item &c : find_nearby_food() ) {
             if( square_dist( pos_bub(), c.loc.pos_bub( here ) ) <= 1 ) {
                 if( consume_food_at( c.loc ) ) {
@@ -3194,8 +3197,8 @@ npc_action npc::address_needs( float danger )
 
     // Normal food/drink: camp -> inventory -> ground food -> terrain water.
     // All under the same random gate so ground never outranks camp/inventory.
-    if( one_in( 3 ) && ( get_thirst() > NPC_THIRST_CONSUME ||
-                         get_hunger() > NPC_HUNGER_CONSUME ) ) {
+    if( needs_food() && one_in( 3 ) && ( get_thirst() > NPC_THIRST_CONSUME ||
+                                         get_hunger() > NPC_HUNGER_CONSUME ) ) {
         if( consume_food_from_camp() ) {
             return npc_noop;
         }
