@@ -2504,24 +2504,26 @@ void parse_tags( std::string &phrase, const_talker const &u, const_talker const 
             phrase.replace( fa, l, format_money( price ) );
         } else if( tag == "<interval>" ) {
             const npc *guy = dynamic_cast<const npc *>( me_chr );
-            std::string restock_interval = guy ? guy->get_restock_interval() : _( "a few days" );
+            const npc *trader = guy ? &guy->get_trade_delegate() : nullptr;
+            std::string restock_interval = trader ? trader->get_restock_interval() : _( "a few days" );
             phrase.replace( fa, l, restock_interval );
         } else if( tag == "<restock_time_point>" ) {
             const npc *guy = dynamic_cast<const npc *>( me_chr );
-            if( guy == nullptr ) {
+            const npc *trader = guy ? &guy->get_trade_delegate() : nullptr;
+            if( trader == nullptr ) {
                 phrase.replace( fa, l, _( "the future" ) );
             } else if( get_option<bool>( "SHOW_MONTHS" ) && calendar::year_length() ==  364_days ) {
-                std::pair<month, int> month_day = month_and_day( guy->restock_time() );
+                std::pair<month, int> month_day = month_and_day( trader->restock_time() );
                 //~ 1 is month, 2 is day
                 phrase.replace( fa, l, string_format( pgettext( "month, day and time", "%1$s %2$d, %3$s" ),
                                                       to_string( month_day.first ), month_day.second,
-                                                      to_string_time_of_day( guy->restock_time() ) ) );
+                                                      to_string_time_of_day( trader->restock_time() ) ) );
             } else {
                 //~ 1 is season, 2 is day
                 phrase.replace( fa, l, string_format( pgettext( "season, day, and time", "%1$s %2$d, %3$s" ),
-                                                      calendar::name_season( season_of_year( guy->restock_time() ) ),
-                                                      day_of_season<int>( guy->restock_time() ) + 1,
-                                                      to_string_time_of_day( guy->restock_time() ) ) );
+                                                      calendar::name_season( season_of_year( trader->restock_time() ) ),
+                                                      day_of_season<int>( trader->restock_time() ) + 1,
+                                                      to_string_time_of_day( trader->restock_time() ) ) );
             }
         } else if( tag.find( "<u_val:" ) == 0 ) {
             //adding a user variable to the string
