@@ -5703,7 +5703,9 @@
     "purifiable": false,
     "vitamin_cost": 210,
     "social_modifiers": { "lie": -5, "persuade": -5 },
-    "enchantments": [ { "values": [ { "value": "SKILL_RUST_RESIST", "multiply": 0.5 } ] } ],
+    "enchantments": [
+      { "values": [ { "value": "SKILL_RUST_RESIST", "multiply": 0.5 }, { "value": "LEARNING_FOCUS", "multiply": -0.05 } ] }
+    ],
     "flags": [ "NUMB" ]
   },
   {
