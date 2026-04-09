@@ -1419,21 +1419,24 @@ void game::chat( const std::optional<tripoint_bub_ms> &p )
                 return;
             }
 
+            std::vector<npc *> sorted_npcs( available_for_activities.begin(),
+                                            available_for_activities.end() );
+            std::sort( sorted_npcs.begin(), sorted_npcs.end(), []( const npc * a, const npc * b ) {
+                return localized_compare( a->get_name(), b->get_name() );
+            } );
+
             std::vector<int> npcs_selected;
 
             if( available_for_activities_count == 1 ) {
                 npcs_selected.push_back( 0 );
             } else {
-                std::vector<Character *> clist( available_for_activities.begin(), available_for_activities.end() );
-                std::sort( clist.begin(), clist.end(), []( const Character * a, const Character * b ) {
-                    return localized_compare( a->get_name(), b->get_name() );
-                } );
+                std::vector<Character *> clist( sorted_npcs.begin(), sorted_npcs.end() );
                 npcs_selected = npcs_select_menu( clist, _( "Who should we assign?" ), nullptr );
             }
 
             for( int i : npcs_selected ) {
 
-                npc *selected_npc = available_for_activities[i];
+                npc *selected_npc = sorted_npcs[i];
 
                 switch( activity ) {
                     case NPC_CHAT_ACTIVITIES_MOVE_LOOT: {
