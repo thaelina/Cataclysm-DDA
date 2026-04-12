@@ -213,6 +213,7 @@
     "sym": "x",
     "color": "light_gray",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "EXODII" ]
   },
   {
@@ -225,6 +226,7 @@
     "sym": "x",
     "color": "light_gray",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "EXODII" ]
   },
   {
@@ -363,6 +365,7 @@
     "sym": "p",
     "color": "blue",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "CLASSIC", "WATER" ]
   },
   {
