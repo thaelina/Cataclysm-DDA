@@ -213,6 +213,17 @@
   {
     "type": "ITEM",
     "subtypes": [ "COMESTIBLE" ],
+    "id": "red_winter_wheat_stalks",
+    "name": { "str_sp": "red winter wheat stalks" },
+    "copy-from": "wheat_stalks",
+    "description": "A sheaf of freshly-cut winter wheat, now ready for drying in a stook or smoker.",
+    "//COMMENT": "This value is completely made up(by me) on the broad assumption that hardier winter crops are also less nutritious.",
+    "//COMMENT2": "Actually this value is completely irrelevant because processing uses NUTRIENT_OVERRIDE!",
+    "calories": 640
+  },
+  {
+    "type": "ITEM",
+    "subtypes": [ "COMESTIBLE" ],
     "id": "dry_wheat_stalks",
     "name": { "str_sp": "dried wheat stalks" },
     "comestible_type": "FOOD",
