@@ -1178,7 +1178,9 @@ void draw_character_proficiencies( const Character &who )
 void draw_character_traits( const Character &who )
 {
     cataimgui::draw_colored_text( _( "Traits:" ), COL_HEADER );
-    for( const trait_and_var &character_trait : who.get_mutations_variants( false ) ) {
+    trait_group::Trait_list traits_list = who.get_mutations_variants( false );
+    std::sort( traits_list.begin(), traits_list.end(), trait_var_display_sort );
+    for( const trait_and_var &character_trait : traits_list ) {
         const nc_color trait_color = character_trait.trait->get_display_color();
         cataimgui::draw_colored_text( character_trait.name(), trait_color );
     }
