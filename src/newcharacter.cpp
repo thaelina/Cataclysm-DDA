@@ -3382,6 +3382,7 @@ bool character_creator_ui::handle_action( const std::string &action )
     } else if( action == "CHANGE_NAME" ) {
         string_input_popup_imgui popup( 60, you.name );
         popup.set_description( _( "Enter name.  Cancel to delete all." ) );
+        popup.set_max_input_length( NAME_CHARACTER_LIMIT );
         you.name = popup.query();
     } else if( action == "CHANGE_AGE" ) {
         const int age_current = you.base_age();
