@@ -104,6 +104,7 @@
     "sym": "X",
     "color": "blue",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "MAN_MADE", "CLASSIC" ]
   },
   {
@@ -116,6 +117,7 @@
     "sym": "X",
     "color": "red",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "MAN_MADE", "CLASSIC" ]
   },
   {
@@ -141,6 +143,7 @@
     "sym": "C",
     "color": "yellow",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "MAN_MADE", "CLASSIC" ]
   },
   {
@@ -353,6 +356,7 @@
     "sym": ".",
     "color": "brown",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "CLASSIC" ]
   },
   {
@@ -648,6 +652,7 @@
     "sym": "W",
     "color": "yellow",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "WASP" ]
   },
   {
@@ -660,6 +665,7 @@
     "sym": "D",
     "color": "brown",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "WASP" ]
   },
   {
@@ -681,6 +687,7 @@
     "sym": "X",
     "color": "yellow",
     "autonote": true,
+    "see_from_afar": true,
     "flags": [ "MAN_MADE", "CLASSIC" ]
   },
   {
