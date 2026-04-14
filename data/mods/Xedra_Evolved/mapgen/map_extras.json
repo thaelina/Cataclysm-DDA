@@ -598,7 +598,7 @@
     "min_max_zlevel": [ 0, 0 ],
     "sym": "G",
     "color": "magenta",
-    "autonote_visibility": "same_tile",
+    "autonote_visibility": "details",
     "flags": [ "CLASSIC" ]
   },
   {
