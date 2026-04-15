@@ -1904,6 +1904,26 @@
   },
   {
     "type": "keybinding",
+    "id": "INCREASE_VALUE",
+    "name": "Increase selected value",
+    "bindings": [
+      { "input_method": "keyboard_char", "key": "+" },
+      { "input_method": "keyboard_code", "key": "KEYPAD_PLUS" },
+      { "input_method": "gamepad", "key": "L_RADIAL_E" }
+    ]
+  },
+  {
+    "type": "keybinding",
+    "id": "DECREASE_VALUE",
+    "name": "Decrease selected value",
+    "bindings": [
+      { "input_method": "keyboard_any", "key": "-" },
+      { "input_method": "keyboard_code", "key": "KEYPAD_MINUS" },
+      { "input_method": "gamepad", "key": "L_RADIAL_W" }
+    ]
+  },
+  {
+    "type": "keybinding",
     "id": "RANDOMIZE_CHAR_DESCRIPTION",
     "name": "Pick random character description",
     "bindings": [

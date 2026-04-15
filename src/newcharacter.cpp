@@ -222,6 +222,30 @@ static void append_screen_reader_active( std::string &entry_text )
     }
 }
 
+static void set_stat_base( avatar &u, character_stat stat, int amt )
+{
+    // minimum stat specific to character creator UI
+    if( amt < CHARACTER_STAT_MIN ) {
+        return;
+    }
+    switch( stat ) {
+        case character_stat::STRENGTH:
+            u.set_str_base( amt );
+            break;
+        case character_stat::DEXTERITY:
+            u.set_dex_base( amt );
+            break;
+        case character_stat::INTELLIGENCE:
+            u.set_int_base( amt );
+            break;
+        case character_stat::PERCEPTION:
+            u.set_per_base( amt );
+            break;
+        default:
+            break;
+    }
+}
+
 static int stat_point_pool()
 {
     return 4 * 8 + get_option<int>( "INITIAL_STAT_POINTS" );
@@ -2373,7 +2397,7 @@ void character_creator_ui::upon_switching_tab()
     update_uilist_entries();
 }
 
-void character_creator_ui::setup_input_context( input_context &cc_ictxt )
+void character_creator_ui::setup_input_context( input_context &cc_ictxt, bool quick_value_change )
 {
     const bool allow_reroll = cc_uistate.generation_type == character_type::RANDOM;
 
@@ -2404,6 +2428,10 @@ void character_creator_ui::setup_input_context( input_context &cc_ictxt )
         cc_ictxt.register_action( "CHOOSE_CITY" );
     }
     cc_ictxt.register_action( "CHOOSE_LOCATION" );
+    if( quick_value_change ) {
+        cc_ictxt.register_action( "INCREASE_VALUE" );
+        cc_ictxt.register_action( "DECREASE_VALUE" );
+    }
 }
 
 static cataimgui::bounds uilist_reset_desired_bounds()
@@ -2419,7 +2447,8 @@ void character_creator_ui::setup_new_uilist()
         const avatar &u = get_avatar();
 
         input_context new_uilist_input;
-        setup_input_context( new_uilist_input );
+        setup_input_context( new_uilist_input,
+                             cc_uistate.selected_tab == CHARCREATOR_STATS || cc_uistate.selected_tab == CHARCREATOR_SKILLS );
 
         if( cc_uistate.selected_tab != CHARCREATOR_SUMMARY ) {
             set_current_tab_uilist( std::make_shared<uilist>() );
@@ -3289,6 +3318,21 @@ bool character_creator_callback::key( const input_context &ctxt, const input_eve
 bool character_creator_ui::handle_action( const std::string &action )
 {
     avatar &you = get_avatar();
+
+    auto mod_stat_base = [&you]( int mod_value ) {
+        character_stat selected_stat = static_cast<character_stat>( cc_uistate.selected_stat_index );
+        cc_uistate.stats[cc_uistate.selected_stat_index] += mod_value;
+        set_stat_base( you, selected_stat, cc_uistate.stats[cc_uistate.selected_stat_index] );
+    };
+    auto mod_skill = [&you]( int mod_value ) {
+        const skill_id selected_skill = cc_uistate.get_selected_skill();
+        if( you.get_skill_level( selected_skill ) == 0 && mod_value < 0 ) {
+            return;
+        }
+        you.mod_skill_level( selected_skill, mod_value );
+        you.mod_knowledge_level( selected_skill, mod_value );
+    };
+
     if( action == "QUIT" && query_yn( _( "Return to main menu?" ) ) ) {
         cc_uistate.quit_to_main_menu = true;
     } else if( action == "PREV_TAB" ) {
@@ -3430,6 +3474,20 @@ bool character_creator_ui::handle_action( const std::string &action )
                 you.blood_rh_factor = false;
             }
         }
+    } else if( action == "INCREASE_VALUE" ) {
+        if( cc_uistate.selected_tab == CHARCREATOR_SKILLS ) {
+            mod_skill( 1 );
+        } else if( cc_uistate.selected_tab == CHARCREATOR_STATS ) {
+            mod_stat_base( 1 );
+        }
+        update_uilist_entries();
+    } else if( action == "DECREASE_VALUE" ) {
+        if( cc_uistate.selected_tab == CHARCREATOR_SKILLS ) {
+            mod_skill( -1 );
+        } else if( cc_uistate.selected_tab == CHARCREATOR_STATS ) {
+            mod_stat_base( -1 );
+        }
+        update_uilist_entries();
     } else {
         return false;
     }
@@ -3472,7 +3530,6 @@ void character_creator_callback::confirm( uilist *menu )
             cc_uistate.recalc_professions = true;
             cc_uistate.recalc_hobbies = true;
             cc_uistate.recalc_traits = true;
-            ui_parent->update_uilist_entries();
             break;
         }
         case CHARCREATOR_PROFESSION: {
@@ -3512,7 +3569,6 @@ void character_creator_callback::confirm( uilist *menu )
 
             cc_uistate.recalc_hobbies = true;
             cc_uistate.recalc_traits = true;
-            ui_parent->update_uilist_entries();
             cc_uistate.cached_profession_inventory.clear();
             break;
         }
@@ -3558,32 +3614,11 @@ void character_creator_callback::confirm( uilist *menu )
             cc_uistate.recalc_traits = true;
             cc_uistate.recalc_hobbies_taken = true;
             cc_uistate.recalc_hobbies_taken_list( u );
-            ui_parent->update_uilist_entries();
-
             break;
         }
         case CHARCREATOR_STATS: {
             select( menu );
             const int selected_stat_index = cc_uistate.selected_stat_index;
-
-            auto set_stat_base = [&u]( character_stat stat, int amt ) {
-                switch( stat ) {
-                    case character_stat::STRENGTH:
-                        u.set_str_base( amt );
-                        break;
-                    case character_stat::DEXTERITY:
-                        u.set_dex_base( amt );
-                        break;
-                    case character_stat::INTELLIGENCE:
-                        u.set_int_base( amt );
-                        break;
-                    case character_stat::PERCEPTION:
-                        u.set_per_base( amt );
-                        break;
-                    default:
-                        break;
-                }
-            };
 
             character_stat selected_stat = static_cast<character_stat>( selected_stat_index );
             const int stat_queried = cc_uistate.stats[selected_stat_index];
@@ -3593,12 +3628,8 @@ void character_creator_callback::confirm( uilist *menu )
                                                         CHARACTER_STAT_MIN, CHARACTER_STAT_MAX ) );
             int stat_queried_result = stat_query.query();
             if( stat_queried_result != stat_queried ) {
-                const int stat_result_clamped = std::clamp( stat_queried_result, CHARACTER_STAT_MIN,
-                                                CHARACTER_STAT_MAX );
-                set_stat_base( selected_stat, stat_result_clamped );
-                cc_uistate.stats[selected_stat_index] = stat_result_clamped;
-                menu->entries[selected_stat_index].txt = char_creation::get_character_stat_header(
-                            selected_stat_index );
+                set_stat_base( u, selected_stat, stat_queried_result );
+                cc_uistate.stats[selected_stat_index] = stat_queried_result;
             }
 
             break;
@@ -3682,8 +3713,6 @@ void character_creator_callback::confirm( uilist *menu )
             if( inc_type != 0 ) {
                 u.toggle_trait_deps( cur_trait, variant );
             }
-
-            ui_parent->update_uilist_entries();
             break;
         }
         case CHARCREATOR_SKILLS: {
@@ -3699,14 +3728,13 @@ void character_creator_callback::confirm( uilist *menu )
                 u.set_skill_level( skill_queried, skill_result_clamped );
                 u.set_knowledge_level( skill_queried, skill_result_clamped );
             }
-
-            ui_parent->update_uilist_entries();
             break;
         }
         default:
             break;
     }
     cc_uistate.recalc_rating = true;
+    ui_parent->update_uilist_entries();
 }
 
 void character_creator_callback::select( uilist *menu )

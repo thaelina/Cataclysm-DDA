@@ -135,7 +135,8 @@ class character_creator_ui
         void update_uilist_entries();
         void upon_switching_tab();
         void update_uilist_position( ImVec2 new_position );
-        void setup_input_context( input_context &cc_ictxt );
+        // @param quick_value_change - if true, add inputs for changing a value (stat or skill)
+        void setup_input_context( input_context &cc_ictxt, bool quick_value_change );
         // @return action was handled
         bool handle_action( const std::string &action );
 
