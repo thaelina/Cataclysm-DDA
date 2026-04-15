@@ -777,6 +777,10 @@ void uilist::calc_data()
         calculated_label_width = calculated_menu_size.x - calculated_hotkey_width - padding -
                                  calculated_secondary_width - padding - padding;
     }
+    if( force_desired_bounds && desired_bounds.has_value() ) {
+        calculated_menu_size.x = desired_bounds->w;
+        calculated_menu_size.y = desired_bounds->h;
+    }
 }
 
 void uilist::setup()

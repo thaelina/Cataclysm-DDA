@@ -1963,10 +1963,11 @@ void draw_blood( const Character &you )
                                   ( you.blood_rh_factor ? "+" : "-" ), c_light_gray );
 }
 
-void draw_scenario( const avatar &you )
+void draw_scenario_profession( const avatar &you )
 {
-    cataimgui::draw_colored_text( string_format( _( "Scenario: %s" ),
-                                  colorize( get_scenario()->gender_appropriate_name( you.male ), c_light_gray ) ), c_white );
+    draw_colored_text_wrap( string_format( _( "Scenario: %s  Profession: %s" ),
+                                           colorize( get_scenario()->gender_appropriate_name( you.male ), c_light_gray ),
+                                           colorize( you.prof->gender_appropriate_name( you.male ), c_light_gray ) ), c_white );
 }
 
 void draw_time_cataclysm_start()
@@ -2405,6 +2406,11 @@ void character_creator_ui::setup_input_context( input_context &cc_ictxt )
     cc_ictxt.register_action( "CHOOSE_LOCATION" );
 }
 
+static cataimgui::bounds uilist_reset_desired_bounds()
+{
+    return { 0, -1.0f, 0.33f * ImGui::GetMainViewport()->WorkSize.x, -1.0f };
+}
+
 void character_creator_ui::setup_new_uilist()
 {
     std::shared_ptr<uilist> new_uilist = get_current_tab_uilist();
@@ -2426,7 +2432,8 @@ void character_creator_ui::setup_new_uilist()
             new_uilist->size_to_all_categories = true;
             new_uilist->callback = &cc_callback;
             //snap to left edge of screen, position and height updated later
-            new_uilist->desired_bounds = { 0, -1.0f, -1.0f, -1.0f };
+            new_uilist->desired_bounds = uilist_reset_desired_bounds();
+            new_uilist->force_desired_bounds = true;
         }
 
         switch( cc_uistate.selected_tab ) {
@@ -2602,7 +2609,7 @@ void character_creator_ui::update_uilist_entries()
             break;
     }
     if( menu ) {
-        menu->desired_bounds = { 0, -1.0f, -1.0f, -1.0f };
+        menu->desired_bounds = uilist_reset_desired_bounds();
         menu->filterlist();
         menu->setup();
     }
@@ -2630,11 +2637,10 @@ void character_creator_ui::setup_avatar()
 void character_creator_ui::update_uilist_position( ImVec2 new_position )
 {
     std::shared_ptr<uilist> current_uilist = get_current_tab_uilist();
-    if( current_uilist && current_uilist->desired_bounds->y != new_position.y ) {
-        current_uilist->desired_bounds->y = new_position.y;
-        current_uilist->desired_bounds->h = ImGui::GetContentRegionAvail().y;
-        current_uilist->reposition();
-    }
+    current_uilist->desired_bounds = uilist_reset_desired_bounds();
+    current_uilist->desired_bounds->y = new_position.y;
+    current_uilist->desired_bounds->h = ImGui::GetContentRegionAvail().y;
+    current_uilist->reposition();
 }
 
 void character_creator_ui_impl::draw_controls()
@@ -2657,7 +2663,14 @@ void character_creator_ui_impl::draw_controls()
             cc_uistate.selected_tab = new_tab;
             ui_parent->upon_switching_tab();
         }
-        ui_parent->update_uilist_position( ImGui::GetCursorScreenPos() );
+        std::shared_ptr<uilist> current_uilist = ui_parent->get_current_tab_uilist();
+        ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+        if( current_uilist ) {
+            if( current_uilist->desired_bounds->y != cursor_pos.y ||
+                current_uilist->desired_bounds->w != uilist_reset_desired_bounds().w ) {
+                ui_parent->update_uilist_position( ImGui::GetCursorScreenPos() );
+            }
+        }
     };
 
     draw_top_bar( pc );
@@ -2719,7 +2732,7 @@ void character_creator_ui_impl::draw_top_bar( const avatar &u ) const
 
     if( ImGui::BeginTable( "TOPBAR", 2, ImGuiTableFlags_BordersInnerV ) ) {
         ImGui::TableSetupColumn( "", ImGuiTableColumnFlags_WidthFixed );
-        ImGui::TableSetupColumn( "", ImGuiTableColumnFlags_WidthFixed );
+        ImGui::TableSetupColumn( "", ImGuiTableColumnFlags_WidthStretch );
 
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex( 0 );
@@ -2727,9 +2740,7 @@ void character_creator_ui_impl::draw_top_bar( const avatar &u ) const
         char_creation::draw_name( you, cc_uistate.no_name_entered );
 
         ImGui::TableSetColumnIndex( 1 );
-        char_creation::draw_scenario( you );
-        draw_separator();
-        char_creation::draw_profession( you );
+        char_creation::draw_scenario_profession( you );
 
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex( 0 );
