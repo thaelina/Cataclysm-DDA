@@ -54,6 +54,8 @@ static const efftype_id effect_harnessed( "harnessed" );
 static const efftype_id effect_pet( "pet" );
 static const efftype_id effect_stunned( "stunned" );
 
+static const fault_id fault_axle_broken( "fault_axle_broken" );
+static const fault_id fault_cracked_rim( "fault_cracked_rim" );
 static const fault_id fault_flat_tire_riding_on_rims( "fault_flat_tire_riding_on_rims" );
 static const fault_id fault_punctured_tires( "fault_punctured_tires" );
 
@@ -1352,13 +1354,33 @@ static void apply_tire_punctures( vehicle_part *vp_wheel, std::vector<std::strin
 
 static void apply_generic_wheel_fault( vehicle_part *vp_wheel, std::vector<std::string> *messages )
 {
+    if( vp_wheel->has_fault( fault_axle_broken ) ) { // Already in worst possible state.
+        return;
+    }
+
+    // 90% chance to just crack rim on 'first' failure
+    // 10% chance to go straight to broken axle on any 'first' failure
+    // Wagon wheels are notorious for this kind of critical failure.
+    if( !vp_wheel->has_fault( fault_cracked_rim ) && x_in_y( 90, 100 ) ) {
+        if( vp_wheel->fault_set( fault_cracked_rim ) ) {
+            messages->emplace_back( string_format(
+                                        _( "You hear a crunch as you run something over!" ) ) );
+            return;
+        }
+    } else {
+        if( vp_wheel->fault_set( fault_axle_broken ) ) {
+            messages->emplace_back( string_format(
+                                        _( "Your vehicle lurches as one of the wheels gives out!" ) ) );
+            return;
+        }
+    }
 }
 
 static void apply_wheel_faults( vehicle_part *vp_wheel, std::vector<std::string> *messages )
 {
-    if( vp_wheel->faults_potential().count( fault_punctured_tires ) ) {
+    if( vp_wheel->faults_potential().count( fault_punctured_tires ) ) { // Most wheels
         apply_tire_punctures( vp_wheel, messages );
-    } else {
+    } else if( vp_wheel->faults_potential().count( fault_cracked_rim ) ) { // Wooden cart wheels
         apply_generic_wheel_fault( vp_wheel, messages );
     }
 }
