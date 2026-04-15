@@ -210,7 +210,7 @@ std::string medical_ui::get_limb_effects( const bodypart_id &part ) const
         const nc_color bleeding_color = colorize_bleeding_intensity( bleed_intensity );
         description += string_format( "[ %s ] - %s\n",
                                       colorize( bleed_effect.get_speed_name(), bleeding_color ),
-                                      bleed_effect.disp_short_desc() );
+                                      string_format( bleed_effect.disp_short_desc(), body_part_name( bp.id() ) ) );
     }
 
     // BITTEN block
@@ -218,7 +218,7 @@ std::string medical_ui::get_limb_effects( const bodypart_id &part ) const
         const effect bite_effect = you->get_effect( effect_bite, part );
         description += string_format( "[ %s ] - %s\n",
                                       colorize( bite_effect.get_speed_name(), c_yellow ),
-                                      bite_effect.disp_short_desc() );
+                                      string_format( bite_effect.disp_short_desc(), body_part_name( bp.id() ) ) );
     }
 
     // INFECTED block
@@ -226,7 +226,7 @@ std::string medical_ui::get_limb_effects( const bodypart_id &part ) const
         const effect infected_effect = you->get_effect( effect_infected, part );
         description += string_format( "[ %s ] - %s\n",
                                       colorize( infected_effect.get_speed_name(), c_pink ),
-                                      infected_effect.disp_short_desc() );
+                                      string_format( infected_effect.disp_short_desc(), body_part_name( bp.id() ) ) );
     }
 
     // rest of effects
@@ -235,7 +235,7 @@ std::string medical_ui::get_limb_effects( const bodypart_id &part ) const
             eff.get_id() != effect_bite &&
             eff.get_id() != effect_infected ) {
             description += string_format( "[ %s ] - %s\n", colorize( eff.get_speed_name(), c_bold ),
-                                          eff.disp_short_desc() );
+                                          string_format( eff.disp_short_desc(), body_part_name( bp.id() ) ) );
         }
     }
 
