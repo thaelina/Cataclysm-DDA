@@ -2640,6 +2640,45 @@ TEST_CASE( "zone_sort_viewport_lifecycle", "[zones][viewport][activities]" )
         }
     }
 
+    SECTION( "deactivates when nothing to sort" ) {
+        // Remove the apple so unsorted zone is empty.
+        map_stack items_at_src = here.i_at( src_pos );
+        items_at_src.clear();
+
+        CHECK_FALSE( dummy.zone_sort_viewport.active );
+
+        dummy.assign_activity( zone_sort_activity_actor() );
+
+        // Single turn: stage_init activates viewport, stage_think finds
+        // nothing sortable, activity ends in the same do_turn call.
+        dummy.mod_moves( dummy.get_speed() );
+        while( dummy.get_moves() > 0 && dummy.activity ) {
+            dummy.activity.do_turn( dummy );
+        }
+
+        CHECK_FALSE( dummy.activity );
+        CHECK_FALSE( dummy.zone_sort_viewport.active );
+    }
+
+    SECTION( "deactivates when no matching destination zone" ) {
+        // Replace apple with something that has no destination zone.
+        map_stack items_at_src = here.i_at( src_pos );
+        items_at_src.clear();
+        here.add_item_or_charges( src_pos, item( itype_test_heavy_boulder ) );
+
+        CHECK_FALSE( dummy.zone_sort_viewport.active );
+
+        dummy.assign_activity( zone_sort_activity_actor() );
+
+        dummy.mod_moves( dummy.get_speed() );
+        while( dummy.get_moves() > 0 && dummy.activity ) {
+            dummy.activity.do_turn( dummy );
+        }
+
+        CHECK_FALSE( dummy.activity );
+        CHECK_FALSE( dummy.zone_sort_viewport.active );
+    }
+
     SECTION( "viewport_saved_zoom survives serialize roundtrip" ) {
         dummy.assign_activity( zone_sort_activity_actor() );
 
