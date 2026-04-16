@@ -63,8 +63,6 @@
 #include "units.h"
 #include "value_ptr.h"
 
-class uilist_impl;
-
 static const efftype_id effect_pet( "pet" );
 
 static const mongroup_id GROUP_ZOMBIE( "GROUP_ZOMBIE" );

@@ -2012,13 +2012,6 @@ void draw_time_game_start()
     cataimgui::draw_colored_text( to_string( get_scenario()->start_of_game() ), c_light_gray );
 }
 
-void draw_profession( const avatar &you )
-{
-    draw_colored_text_wrap( string_format( _( "Profession: %s" ),
-                                           colorize( you.prof->gender_appropriate_name( you.male ), c_light_gray ) ), c_white );
-}
-
-
 void draw_location( const avatar &you )
 {
     std::string random_start_location_text = string_format( n_gettext(
@@ -2712,10 +2705,10 @@ void character_creator_ui_impl::draw_controls()
 
     bool &top_bar_is_open = cc_uistate.top_bar_is_open;
     ImGui::SetNextItemOpen( top_bar_is_open );
-    if( top_bar_is_open = ImGui::CollapsingHeader( string_format(
-                              _( "General Info (Click or %s to %s)" ),
-                              ui_parent->get_current_tab_input().get_desc( "TOGGLE_TOP_BAR" ),
-                              top_bar_is_open ? _( "collapse" ) : _( "open" ) ).c_str() ) ) {
+    if( ( top_bar_is_open = ImGui::CollapsingHeader( string_format(
+                                _( "General Info (Click or %s to %s)" ),
+                                ui_parent->get_current_tab_input().get_desc( "TOGGLE_TOP_BAR" ),
+                                top_bar_is_open ? _( "collapse" ) : _( "open" ) ).c_str() ) ) ) {
         draw_top_bar( pc );
     }
 
