@@ -1,0 +1,46 @@
+[
+  {
+    "type": "overmap_terrain",
+    "id": "test_pp_riot_building",
+    "name": "PP test building",
+    "sym": ".",
+    "color": "white",
+    "see_cost": "none",
+    "flags": [ "SHOULD_NOT_SPAWN", "NO_ROTATE", "PP_GENERATE_RIOT_DAMAGE" ]
+  },
+  {
+    "type": "mapgen",
+    "om_terrain": [ "test_pp_riot_building" ],
+    "object": {
+      "fill_ter": "t_floor",
+      "rows": [
+        "WWWWWWWWWWWWWWWWWWWWWWWW",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W..T...................W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W............<.........W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W..T...................W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "W......................W",
+        "WWWWWWWWWWWWWWWWWWWWWWWW"
+      ],
+      "terrain": { "W": "t_wall_wood", ".": "t_floor", "<": "t_wood_stairs_up" },
+      "furniture": { "T": "f_table" }
+    }
+  }
+]
