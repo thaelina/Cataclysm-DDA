@@ -1841,6 +1841,10 @@ void draw_scenario_details( const avatar &u )
     draw_colored_text_wrap( get_origin( current_scenario->src ), COL_NOTE_MINOR );
     draw_spacer();
 
+    char_creation::draw_time_cataclysm_start();
+    char_creation::draw_time_game_start();
+    draw_spacer();
+
     draw_colored_text_wrap( _( "Scenario Story:" ), COL_HEADER );
     draw_colored_text_wrap( current_scenario->description( u.male ), COL_NOTE_MINOR );
     draw_spacer();
@@ -2424,6 +2428,7 @@ void character_creator_ui::setup_input_context( input_context &cc_ictxt, bool qu
     cc_ictxt.register_action( "RESET_CALENDAR" );
     cc_ictxt.register_action( "SCROLL_INFOBOX_UP" );
     cc_ictxt.register_action( "SCROLL_INFOBOX_DOWN" );
+    cc_ictxt.register_action( "TOGGLE_TOP_BAR" );
     if( get_option<bool>( "SELECT_STARTING_CITY" ) ) {
         cc_ictxt.register_action( "CHOOSE_CITY" );
     }
@@ -2670,6 +2675,9 @@ void character_creator_ui::update_uilist_position( ImVec2 new_position )
     current_uilist->desired_bounds->y = new_position.y;
     current_uilist->desired_bounds->h = ImGui::GetContentRegionAvail().y;
     current_uilist->reposition();
+    if( cc_uilist_current ) {
+        cc_uilist_current->mark_resized();
+    }
 }
 
 void character_creator_ui_impl::draw_controls()
@@ -2693,16 +2701,23 @@ void character_creator_ui_impl::draw_controls()
             ui_parent->upon_switching_tab();
         }
         std::shared_ptr<uilist> current_uilist = ui_parent->get_current_tab_uilist();
-        ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
         if( current_uilist ) {
+            const ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
             if( current_uilist->desired_bounds->y != cursor_pos.y ||
                 current_uilist->desired_bounds->w != uilist_reset_desired_bounds().w ) {
-                ui_parent->update_uilist_position( ImGui::GetCursorScreenPos() );
+                ui_parent->update_uilist_position( cursor_pos );
             }
         }
     };
 
-    draw_top_bar( pc );
+    bool &top_bar_is_open = cc_uistate.top_bar_is_open;
+    ImGui::SetNextItemOpen( top_bar_is_open );
+    if( top_bar_is_open = ImGui::CollapsingHeader( string_format(
+                              _( "General Info (Click or %s to %s)" ),
+                              ui_parent->get_current_tab_input().get_desc( "TOGGLE_TOP_BAR" ),
+                              top_bar_is_open ? _( "collapse" ) : _( "open" ) ).c_str() ) ) {
+        draw_top_bar( pc );
+    }
 
     if( ImGui::BeginTabBar( "CHARACTER_CREATOR_TABS" ) ) {
         if( ImGui::BeginTabItem( "SCENARIO", nullptr,
@@ -2789,14 +2804,9 @@ void character_creator_ui_impl::draw_top_bar( const avatar &u ) const
             ImGui::SameLine();
             char_creation::draw_action_button( _( "Keep Scenario" ), "REROLL_CHARACTER_WITH_SCENARIO" );
         }
-
-        ImGui::TableNextRow();
-        ImGui::TableSetColumnIndex( 0 );
-        char_creation::draw_time_cataclysm_start();
-        ImGui::TableSetColumnIndex( 1 );
-        char_creation::draw_time_game_start();
         ImGui::EndTable();
     }
+
     if( cc_uistate.recalc_rating ) {
         cc_uistate.recalc_rating = false;
         cc_uistate.rating_string = player_difficulty::getInstance().difficulty_to_string( u );
@@ -3366,6 +3376,8 @@ bool character_creator_ui::handle_action( const std::string &action )
         cc_uistate.scrolled_up = true;
     } else if( action == "SCROLL_INFOBOX_DOWN" ) {
         cc_uistate.scrolled_down = true;
+    } else if( action == "TOGGLE_TOP_BAR" ) {
+        cc_uistate.top_bar_is_open = !cc_uistate.top_bar_is_open;
     } else if( action == "SAVE_TEMPLATE" ) {
         if( const auto name = query_for_template_name() ) {
             you.save_template( *name, pool_type::FREEFORM );

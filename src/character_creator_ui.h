@@ -94,6 +94,7 @@ struct character_creator_uistate {
     bool scrolled_down = false;
     bool quit_to_main_menu = false;
     bool finished_character_creator = false;
+    bool top_bar_is_open = true;
 
     void set_initial_tab( character_creator_tab first_tab );
 
