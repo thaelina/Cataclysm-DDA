@@ -137,7 +137,7 @@ static bool cities_enabled()
 static void draw_spacer()
 {
     ImGui::NewLine();
-};
+}
 
 static void set_detail_scroll()
 {
