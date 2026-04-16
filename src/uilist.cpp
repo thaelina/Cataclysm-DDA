@@ -36,32 +36,6 @@
 #include "sdl_wrappers.h"
 #endif
 
-class uilist_impl : cataimgui::window
-{
-        uilist &parent;
-    public:
-        explicit uilist_impl( uilist &parent ) : cataimgui::window( "UILIST",
-                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                    ImGuiWindowFlags_NoNavInputs ),
-            parent( parent ) {
-        }
-
-        uilist_impl( uilist &parent, const std::string &title ) : cataimgui::window( title,
-                    ImGuiWindowFlags_None | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                    ImGuiWindowFlags_NoNavInputs ),
-            parent( parent ) {
-        }
-
-        cataimgui::bounds get_bounds() override {
-            if( !parent.started ) {
-                parent.setup();
-            }
-
-            return parent.desired_bounds.value_or( parent.calculated_bounds );
-        }
-        void draw_controls() override;
-};
-
 void uilist_impl::draw_controls()
 {
 #if defined(TILES)

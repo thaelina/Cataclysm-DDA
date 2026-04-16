@@ -540,6 +540,33 @@ class uilist // NOLINT(cata-xy)
         void set_selected( int index );
 };
 
+
+class uilist_impl : public cataimgui::window
+{
+        uilist &parent;
+    public:
+        explicit uilist_impl( uilist &parent ) : cataimgui::window( "UILIST",
+                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                    ImGuiWindowFlags_NoNavInputs ),
+            parent( parent ) {
+        }
+
+        uilist_impl( uilist &parent, const std::string &title ) : cataimgui::window( title,
+                    ImGuiWindowFlags_None | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                    ImGuiWindowFlags_NoNavInputs ),
+            parent( parent ) {
+        }
+
+        cataimgui::bounds get_bounds() override {
+            if( !parent.started ) {
+                parent.setup();
+            }
+
+            return parent.desired_bounds.value_or( parent.calculated_bounds );
+        }
+        void draw_controls() override;
+};
+
 /**
  *  Hack ui list to behave as a multi column menu
  */
