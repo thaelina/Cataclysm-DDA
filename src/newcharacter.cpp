@@ -3324,12 +3324,15 @@ bool character_creator_ui::handle_action( const std::string &action )
 
     auto mod_stat_base = [&you]( int mod_value ) {
         character_stat selected_stat = static_cast<character_stat>( cc_uistate.selected_stat_index );
-        cc_uistate.stats[cc_uistate.selected_stat_index] += mod_value;
+        cc_uistate.stats[cc_uistate.selected_stat_index] = std::clamp(
+                    cc_uistate.stats[cc_uistate.selected_stat_index] + mod_value,
+                    CHARACTER_STAT_MIN, CHARACTER_STAT_MAX );
         set_stat_base( you, selected_stat, cc_uistate.stats[cc_uistate.selected_stat_index] );
     };
     auto mod_skill = [&you]( int mod_value ) {
         const skill_id selected_skill = cc_uistate.get_selected_skill();
-        if( you.get_skill_level( selected_skill ) == 0 && mod_value < 0 ) {
+        if( ( you.get_skill_level( selected_skill ) == MIN_SKILL && mod_value < 0 ) ||
+            ( you.get_skill_level( selected_skill ) == MAX_SKILL && mod_value > 0 ) ) {
             return;
         }
         you.mod_skill_level( selected_skill, mod_value );
@@ -3632,9 +3635,11 @@ void character_creator_callback::confirm( uilist *menu )
                                                         io::enum_to_full_string( selected_stat ),
                                                         CHARACTER_STAT_MIN, CHARACTER_STAT_MAX ) );
             int stat_queried_result = stat_query.query();
-            if( stat_queried_result != stat_queried ) {
-                set_stat_base( u, selected_stat, stat_queried_result );
-                cc_uistate.stats[selected_stat_index] = stat_queried_result;
+            const int stat_result_clamped = std::clamp( stat_queried_result, CHARACTER_STAT_MIN,
+                                            CHARACTER_STAT_MAX );
+            if( stat_result_clamped != stat_queried ) {
+                set_stat_base( u, selected_stat, stat_result_clamped );
+                cc_uistate.stats[selected_stat_index] = stat_result_clamped;
             }
 
             break;
