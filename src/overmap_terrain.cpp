@@ -665,6 +665,11 @@ void oter_type_t::check() const
                   "road OMTs use hardcoded dispatch and the field will be ignored",
                   id.str() );
     }
+    if( has_flag( oter_flags::pp_generate_riot_damage ) && post_process_generators.empty() ) {
+        DebugLog( D_WARNING, D_MAP_GEN ) <<
+                                         "oter_type " << id.str() << " uses deprecated PP_GENERATE_RIOT_DAMAGE flag; "
+                                         "use \"post_process_generators\": [\"riot_damage\"] instead";
+    }
     /* find omts without vision_levels assigned
     if( vision_levels == oter_vision_default && !has_flag( oter_flags::should_not_spawn ) ) {
         fprintf( stderr, "%s (%s)\n", id.c_str(), name.translated().c_str() );
