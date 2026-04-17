@@ -5336,6 +5336,12 @@ void Character::cancel_activity()
         // cancel_activity) to push to backlog, so this is safe.
         activity.auto_resume = false;
         backlog.push_front( activity );
+    } else if( !backlog.empty() && backlog.front().auto_resume ) {
+        // Activity can't resume (can_resume=false) so no guard entry
+        // was pushed.  Clear auto_resume on the front backlog item to
+        // prevent resume_backlog_activity() from immediately restoring
+        // a parent multi-zone activity.
+        backlog.front().auto_resume = false;
     }
     sfx::end_activity_sounds(); // kill activity sounds when canceled
     activity = player_activity();
