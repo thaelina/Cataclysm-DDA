@@ -282,9 +282,6 @@ void game::unserialize_impl( const JsonObject &data )
     load_map( project_combine( com, lev ), /*pump_events=*/true );
 
     safe_mode = static_cast<safe_mode_type>( tmprun );
-    if( get_option<bool>( "SAFEMODE" ) && safe_mode == SAFE_MODE_OFF ) {
-        safe_mode = SAFE_MODE_ON;
-    }
 
     std::string linebuff;
     std::string linebuf;
