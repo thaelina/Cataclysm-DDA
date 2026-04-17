@@ -137,6 +137,11 @@ static const oter_str_id oter_ants_ns( "ants_ns" );
 static const oter_str_id oter_ants_nsw( "ants_nsw" );
 static const oter_str_id oter_ants_sw( "ants_sw" );
 static const oter_str_id oter_ants_wn( "ants_wn" );
+
+static const pp_generator_id pp_generator_aftershock_ruin( "aftershock_ruin" );
+static const pp_generator_id pp_generator_riot_damage( "riot_damage" );
+static const pp_generator_id pp_generator_riot_damage_road( "riot_damage_road" );
+
 static const ter_str_id ter_t_dirt( "t_dirt" );
 static const ter_str_id ter_t_grass( "t_grass" );
 static const ter_str_id ter_t_null( "t_null" );
@@ -345,13 +350,12 @@ void map::generate( const tripoint_abs_omt &p, const time_point &when, bool save
                 const tripoint_abs_omt omt_point = { p.x(), p.y(), gridz };
                 oter_id omt = overmap_buffer.ter( omt_point );
                 if( omt->has_flag( oter_flags::pp_generate_riot_damage ) && !omt->has_flag( oter_flags::road ) ) {
-                    GENERATOR_riot_damage( *this, omt_point, false );
+                    pp_generator_riot_damage.obj().execute( *this, omt_point );
                 } else if( omt->has_flag( oter_flags::road ) && overmap_buffer.is_in_city( omt_point ) ) {
-                    // HACK: Hardcode running only certain sub-generators on roads
-                    GENERATOR_riot_damage( *this, omt_point, true );
+                    pp_generator_riot_damage_road.obj().execute( *this, omt_point );
                 }
                 if( omt->has_flag( oter_flags::pp_generate_ruined ) && !omt->has_flag( oter_flags::road ) ) {
-                    GENERATOR_aftershock_ruin( *this, omt_point );
+                    pp_generator_aftershock_ruin.obj().execute( *this, omt_point );
                 }
             }
         }

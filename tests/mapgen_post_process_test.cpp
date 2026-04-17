@@ -30,6 +30,12 @@ static const itype_id itype_seed_rose( "seed_rose" );
 static const oter_str_id oter_field( "field" );
 static const oter_str_id oter_test_pp_riot_building( "test_pp_riot_building" );
 
+static const pp_generator_id pp_generator_riot_damage( "riot_damage" );
+static const pp_generator_id pp_generator_riot_damage_road( "riot_damage_road" );
+static const pp_generator_id pp_generator_test_pp_custom( "test_pp_custom" );
+static const pp_generator_id pp_generator_test_pp_riot( "test_pp_riot" );
+static const pp_generator_id pp_generator_test_pp_road( "test_pp_road" );
+
 static const ter_str_id ter_t_dirt( "t_dirt" );
 static const ter_str_id ter_t_floor( "t_floor" );
 static const ter_str_id ter_t_floor_burnt( "t_floor_burnt" );
@@ -297,7 +303,7 @@ TEST_CASE( "post_process_riot_road_vs_building", "[mapgen][post_process][charact
     for( unsigned int seed = 100; seed < 200; seed++ ) {
         build_pp_test_layout( here, 0, false );
         rng_set_engine_seed( seed );
-        GENERATOR_riot_damage( here, pos, false );
+        pp_generator_riot_damage.obj().execute( here, pos );
         pp_scan_result r = scan_omt( here, 0 );
         if( r.wall_burnt_count > 0 ) {
             found_burn_seed = true;
@@ -310,7 +316,7 @@ TEST_CASE( "post_process_riot_road_vs_building", "[mapgen][post_process][charact
     // Now run with that seed in building mode: pre_burn fires
     build_pp_test_layout( here, 0, false );
     rng_set_engine_seed( burn_seed );
-    GENERATOR_riot_damage( here, pos, false );
+    pp_generator_riot_damage.obj().execute( here, pos );
     pp_scan_result building_result = scan_omt( here, 0 );
     CHECK( building_result.wall_burnt_count > 0 );
     CHECK( building_result.floor_burnt_count > 0 );
@@ -318,7 +324,7 @@ TEST_CASE( "post_process_riot_road_vs_building", "[mapgen][post_process][charact
     // Same seed in road mode: pre_burn skipped
     build_pp_test_layout( here, 0, false );
     rng_set_engine_seed( burn_seed );
-    GENERATOR_riot_damage( here, pos, true );
+    pp_generator_riot_damage_road.obj().execute( here, pos );
     pp_scan_result road_result = scan_omt( here, 0 );
     CHECK( road_result.wall_burnt_count == 0 );
     CHECK( road_result.floor_burnt_count == 0 );
@@ -341,7 +347,7 @@ TEST_CASE( "post_process_natural_underground_skip", "[mapgen][post_process][char
     build_pp_test_layout( here, 0, true );
     calendar::turn = calendar::start_of_cataclysm + 7_days;
     rng_set_engine_seed( 42424242 );
-    GENERATOR_riot_damage( here, pos, false );
+    pp_generator_riot_damage.obj().execute( here, pos );
 
     // Rock wall tiles (NATURAL_UNDERGROUND) must be unchanged
     CHECK( here.ter( tripoint_bub_ms( 1, 1, 0 ) ) == ter_t_rock_wall.id() );
@@ -369,7 +375,7 @@ TEST_CASE( "post_process_stair_preservation", "[mapgen][post_process][characteri
     for( unsigned int seed = 100; seed < 200; seed++ ) {
         build_pp_test_layout( here, 0, false );
         rng_set_engine_seed( seed );
-        GENERATOR_riot_damage( here, pos, false );
+        pp_generator_riot_damage.obj().execute( here, pos );
         pp_scan_result r = scan_omt( here, 0 );
         if( r.wall_burnt_count > 0 ) {
             found = true;
@@ -382,7 +388,7 @@ TEST_CASE( "post_process_stair_preservation", "[mapgen][post_process][characteri
     // Run with burn seed, verify stairs survive
     build_pp_test_layout( here, 0, false );
     rng_set_engine_seed( burn_seed );
-    GENERATOR_riot_damage( here, pos, false );
+    pp_generator_riot_damage.obj().execute( here, pos );
 
     CHECK( here.ter( tripoint_bub_ms( 12, 12, 0 ) ) == ter_t_wood_stairs_up.id() );
 
@@ -405,7 +411,7 @@ TEST_CASE( "post_process_fire_decay", "[mapgen][post_process][characterization]"
     build_pp_test_layout( here, 0, false );
     calendar::turn = calendar::start_of_cataclysm + 30_days;
     rng_set_engine_seed( 42424242 );
-    GENERATOR_riot_damage( here, pos, false );
+    pp_generator_riot_damage.obj().execute( here, pos );
 
     pp_scan_result result = scan_omt( here, 0 );
     CHECK( result.fire_field_count == 0 );
@@ -444,7 +450,7 @@ TEST_CASE( "post_process_item_move_planter_preservation",
     for( unsigned int seed = 1000; seed < 1020; seed++ ) {
         build_pp_test_layout( here, 0, false );
         rng_set_engine_seed( seed );
-        GENERATOR_riot_damage( here, pos, true );
+        pp_generator_riot_damage_road.obj().execute( here, pos );
 
         // Only check seed if planter furniture survived bash
         if( here.furn( planter_pos ) == furn_f_planter_seedling.id() ) {
@@ -464,5 +470,47 @@ TEST_CASE( "post_process_item_move_planter_preservation",
     CHECK( planter_survived_count > 0 );
 
     clear_overmaps();
+}
+
+TEST_CASE( "post_process_json_load_roundtrip", "[mapgen][post_process]" )
+{
+    // Uses test data ids (test_pp_*) to avoid coupling to real game JSON.
+    SECTION( "test_pp_riot has 5 sub-generators with expected params" ) {
+        const pp_generator &riot = pp_generator_test_pp_riot.obj();
+        REQUIRE( riot.sub_generators().size() == 5 );
+        CHECK( riot.sub_generators()[0].type == sub_generator_type::bash_damage );
+        CHECK( riot.sub_generators()[0].attempts == 100 );
+        CHECK( riot.sub_generators()[0].chance == 5 );
+        CHECK( riot.sub_generators()[0].min_intensity == 3 );
+        CHECK( riot.sub_generators()[0].max_intensity == 30 );
+        CHECK( riot.sub_generators()[1].type == sub_generator_type::move_items );
+        CHECK( riot.sub_generators()[1].attempts == 50 );
+        CHECK( riot.sub_generators()[1].chance == 8 );
+        CHECK( riot.sub_generators()[2].type == sub_generator_type::add_fire );
+        CHECK( riot.sub_generators()[2].scaling_days_end == 7 );
+        CHECK( riot.sub_generators()[3].type == sub_generator_type::pre_burn );
+        CHECK( riot.sub_generators()[3].min_intensity == 10 );
+        CHECK( riot.sub_generators()[3].max_intensity == 40 );
+        CHECK( riot.sub_generators()[3].scaling_days_start == 2 );
+        CHECK( riot.sub_generators()[3].scaling_days_end == 10 );
+        CHECK( riot.sub_generators()[4].type == sub_generator_type::place_blood );
+        CHECK( riot.sub_generators()[4].attempts == 200 );
+        CHECK( riot.sub_generators()[4].chance == 20 );
+    }
+
+    SECTION( "test_pp_road has 4 sub-generators (no pre_burn)" ) {
+        const pp_generator &road = pp_generator_test_pp_road.obj();
+        REQUIRE( road.sub_generators().size() == 4 );
+        CHECK( road.sub_generators()[0].type == sub_generator_type::bash_damage );
+        CHECK( road.sub_generators()[1].type == sub_generator_type::move_items );
+        CHECK( road.sub_generators()[2].type == sub_generator_type::add_fire );
+        CHECK( road.sub_generators()[3].type == sub_generator_type::place_blood );
+    }
+
+    SECTION( "test_pp_custom has 1 aftershock_ruin sub-generator" ) {
+        const pp_generator &custom = pp_generator_test_pp_custom.obj();
+        REQUIRE( custom.sub_generators().size() == 1 );
+        CHECK( custom.sub_generators()[0].type == sub_generator_type::aftershock_ruin );
+    }
 }
 
