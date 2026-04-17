@@ -4,13 +4,18 @@
 #include <cstddef>
 #include <functional>
 #include <list>
+#include <string>
+#include <string_view>
 
 #include "calendar.h"
 #include "cata_utility.h"
 #include "coordinates.h"
 #include "debug.h"
 #include "drawing_primitives.h"
+#include "flexbuffer_json.h"
+#include "generic_factory.h"
 #include "item.h"
+#include "item_stack.h"
 #include "map.h"
 #include "map_scale_constants.h"
 #include "mapdata.h"
@@ -35,6 +40,189 @@ static const ter_str_id ter_t_snow_metal_floor( "t_snow_metal_floor" );
 static const ter_str_id ter_t_wall_burnt( "t_wall_burnt" );
 static const ter_str_id ter_t_wall_prefab_metal( "t_wall_prefab_metal" );
 
+namespace
+{
+generic_factory<pp_generator> pp_generator_factory( "pp_generator" );
+} // namespace
+
+void pp_generators::load( const JsonObject &jo, const std::string &src )
+{
+    pp_generator_factory.load( jo, src );
+}
+
+void pp_generators::reset()
+{
+    pp_generator_factory.reset();
+}
+
+void pp_generators::finalize()
+{
+    pp_generator_factory.finalize();
+}
+
+void pp_generators::check_consistency()
+{
+    pp_generator_factory.check();
+}
+
+/** @relates string_id */
+template<>
+bool string_id<pp_generator>::is_valid() const
+{
+    return pp_generator_factory.is_valid( *this );
+}
+
+/** @relates string_id */
+template<>
+const pp_generator &string_id<pp_generator>::obj() const
+{
+    return pp_generator_factory.obj( *this );
+}
+
+namespace io
+{
+template<>
+std::string enum_to_string<sub_generator_type>( sub_generator_type data )
+{
+    switch( data ) {
+        // *INDENT-OFF*
+        case sub_generator_type::bash_damage: return "bash_damage";
+        case sub_generator_type::move_items: return "move_items";
+        case sub_generator_type::add_fire: return "add_fire";
+        case sub_generator_type::pre_burn: return "pre_burn";
+        case sub_generator_type::place_blood: return "place_blood";
+        case sub_generator_type::aftershock_ruin: return "aftershock_ruin";
+        // *INDENT-ON*
+        case sub_generator_type::last:
+            break;
+    }
+    cata_fatal( "Invalid sub_generator_type" );
+}
+} // namespace io
+
+void pp_generator::load( const JsonObject &jo, std::string_view )
+{
+    mandatory( jo, was_loaded, "id", id );
+
+    if( jo.has_array( "sub_generators" ) ) {
+        sub_generators_.clear();
+        for( const JsonValue &sg_jo : jo.get_array( "sub_generators" ) ) {
+            pp_sub_generator sg;
+            sg.load( sg_jo );
+            sub_generators_.push_back( sg );
+        }
+    }
+}
+
+void pp_sub_generator::load( const JsonObject &jo )
+{
+    mandatory( jo, false, "type", type );
+    optional( jo, false, "attempts", attempts, 0 );
+    optional( jo, false, "chance", chance, 0 );
+    optional( jo, false, "min_intensity", min_intensity, 0 );
+    optional( jo, false, "max_intensity", max_intensity, 0 );
+    optional( jo, false, "scaling_days_start", scaling_days_start, 0 );
+    optional( jo, false, "scaling_days_end", scaling_days_end, 0 );
+}
+
+void pp_generator::check() const
+{
+    if( sub_generators_.empty() ) {
+        debugmsg( "pp_generator '%s' has no sub_generators", id.str() );
+    }
+    for( const pp_sub_generator &sg : sub_generators_ ) {
+        sg.check( id.str() );
+    }
+}
+
+void pp_sub_generator::check( const std::string &ctx ) const
+{
+    if( attempts < 0 ) {
+        debugmsg( "pp_generator '%s': negative attempts", ctx );
+    }
+
+    const std::string tname = io::enum_to_string( type );
+
+    switch( type ) {
+        case sub_generator_type::bash_damage:
+            if( chance < 0 || chance > 100 ) {
+                debugmsg( "pp_generator '%s' %s: chance %d not in [0,100]", ctx, tname, chance );
+            }
+            if( scaling_days_start != 0 || scaling_days_end != 0 ) {
+                debugmsg( "pp_generator '%s' %s: scaling_days_* ignored for this type",
+                          ctx, tname );
+            }
+            break;
+        case sub_generator_type::move_items:
+            if( chance < 0 || chance > 100 ) {
+                debugmsg( "pp_generator '%s' %s: chance %d not in [0,100]", ctx, tname, chance );
+            }
+            if( min_intensity != 0 ) {
+                debugmsg( "pp_generator '%s' %s: min_intensity is not implemented, "
+                          "but is set to %d", ctx, tname, min_intensity );
+            }
+            if( scaling_days_start != 0 || scaling_days_end != 0 ) {
+                debugmsg( "pp_generator '%s' %s: scaling_days_* ignored for this type",
+                          ctx, tname );
+            }
+            break;
+        case sub_generator_type::add_fire:
+            if( chance != 0 ) {
+                debugmsg( "pp_generator '%s' %s: chance is computed from scaling_days_end, "
+                          "but is set to %d", ctx, tname, chance );
+            }
+            if( scaling_days_start != 0 ) {
+                debugmsg( "pp_generator '%s' %s: scaling_days_start ignored for this type",
+                          ctx, tname );
+            }
+            if( scaling_days_end <= 0 ) {
+                debugmsg( "pp_generator '%s' %s: scaling_days_end must be > 0", ctx, tname );
+            }
+            break;
+        case sub_generator_type::pre_burn:
+            if( chance != 0 ) {
+                debugmsg( "pp_generator '%s' %s: chance is computed from scaling/intensity, "
+                          "but is set to %d", ctx, tname, chance );
+            }
+            if( scaling_days_end <= 0 ) {
+                debugmsg( "pp_generator '%s' %s: scaling_days_end must be > 0", ctx, tname );
+            }
+            if( scaling_days_start > scaling_days_end ) {
+                debugmsg( "pp_generator '%s' %s: scaling_days_start > scaling_days_end",
+                          ctx, tname );
+            }
+            break;
+        case sub_generator_type::place_blood:
+            if( chance < 0 || chance > 1000 ) {
+                debugmsg( "pp_generator '%s' %s: chance %d not in [0,1000]", ctx, tname, chance );
+            }
+            if( min_intensity != 0 || max_intensity != 0 ) {
+                debugmsg( "pp_generator '%s' %s: min/max_intensity ignored for this type",
+                          ctx, tname );
+            }
+            if( scaling_days_start != 0 || scaling_days_end != 0 ) {
+                debugmsg( "pp_generator '%s' %s: scaling_days_* ignored for this type",
+                          ctx, tname );
+            }
+            break;
+        case sub_generator_type::aftershock_ruin:
+            if( attempts != 0 || chance != 0 || min_intensity != 0 ||
+                max_intensity != 0 || scaling_days_start != 0 || scaling_days_end != 0 ) {
+                debugmsg( "pp_generator '%s' %s: all numeric fields ignored for this type",
+                          ctx, tname );
+            }
+            break;
+        case sub_generator_type::last:
+            debugmsg( "pp_generator '%s': invalid sub_generator_type 'last'", ctx );
+            break;
+    }
+
+    if( min_intensity > max_intensity && max_intensity != 0 ) {
+        debugmsg( "pp_generator '%s' %s: min_intensity > max_intensity",
+                  ctx, tname );
+    }
+}
+
 enum class blood_trail_direction : int {
     first = 1,
     NORTH = 1,
@@ -57,7 +245,6 @@ static tripoint_bub_ms get_point_from_direction( int direction,
         case blood_trail_direction::EAST:
             return tripoint_bub_ms( current_tile.x() + 1, current_tile.y(), current_tile.z() );
     }
-    // This shouldn't happen unless the function is used incorrectly
     debugmsg( "Attempted to get point from invalid direction.  %d", direction );
     return current_tile;
 }
@@ -65,15 +252,12 @@ static tripoint_bub_ms get_point_from_direction( int direction,
 static bool tile_can_have_blood( map &md, const tripoint_bub_ms &current_tile,
                                  bool wall_streak, int days_since_cataclysm )
 {
-    // Wall streaks stick to walls, like blood was splattered against the surface
-    // Floor streaks avoid obstacles to look more like a person left the streak behind (Not walking through walls, closed doors, windows, or furniture)
     if( wall_streak ) {
         return md.has_flag_ter( ter_furn_flag::TFLAG_WALL, current_tile ) &&
                !md.has_flag_ter( ter_furn_flag::TFLAG_NATURAL_UNDERGROUND, current_tile );
     } else {
         if( !md.has_flag_ter( ter_furn_flag::TFLAG_INDOORS, current_tile ) &&
             x_in_y( days_since_cataclysm, 30 ) ) {
-            // Placement of blood outdoors scales down over the course of 30 days until no further blood is placed.
             return false;
         }
 
@@ -111,7 +295,6 @@ static void place_blood_streaks( map &md, const tripoint_bub_ms &current_tile,
     bool wall_streak = md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_WALL, current_tile );
 
     if( !tile_can_have_blood( md, current_tile, wall_streak, days_since_cataclysm ) ) {
-        // Quick check the tile is valid.
         return;
     }
 
@@ -122,14 +305,12 @@ static void place_blood_streaks( map &md, const tripoint_bub_ms &current_tile,
         tripoint_bub_ms destination_tile = get_point_from_direction( streak_direction, last_tile );
 
         if( !tile_can_have_blood( md, destination_tile, wall_streak, days_since_cataclysm ) ) {
-            // We hit a non-valid tile. Try to find a new direction otherwise just terminate the streak.
             bool terminate_streak = true;
 
             for( int ii = static_cast<int>( blood_trail_direction::first );
                  ii <= static_cast<int>( blood_trail_direction::last );
                  ii++ ) {
                 if( ii == streak_direction ) {
-                    // We don't want to check the direction we came from. No turning around!
                     continue;
                 }
                 tripoint_bub_ms adjacent_tile = get_point_from_direction( ii, last_tile );
@@ -148,14 +329,11 @@ static void place_blood_streaks( map &md, const tripoint_bub_ms &current_tile,
         }
 
         if( rng( 1, 100 ) < 5 + i * 3 ) {
-            // Sometimes a streak should skip a tile, the chance increases with each step
             last_tile = destination_tile;
             continue;
         }
 
         if( rng( 1, 100 ) < 10 + i * 5 ) {
-            // Sometimes a streak should end early, the chance increases with each step.
-            // This is just a hack to further weight the distribution in favor of short streaks over long ones.
             break;
         }
 
@@ -164,8 +342,6 @@ static void place_blood_streaks( map &md, const tripoint_bub_ms &current_tile,
 
 
         if( ( rng( 1, 100 ) < 30 + i * 3 ) && !wall_streak ) {
-            // Floor streaks can meander and the probability of meandering increases with each step
-            // Long straight streaks aren't visually interesting. So sometimes a streak will curve by meandering to the side.
             int new_direction = 0;
             if( streak_direction == static_cast<int>( blood_trail_direction::NORTH ) ||
                 streak_direction == static_cast<int>( blood_trail_direction::SOUTH ) ) {
@@ -189,7 +365,6 @@ static void place_bool_pools( map &md, const tripoint_bub_ms &current_tile,
                               int days_since_cataclysm )
 {
     if( !tile_can_have_blood( md, current_tile, false, days_since_cataclysm ) ) {
-        // Quick check the first tile is valid for placement
         return;
     }
 
@@ -206,68 +381,35 @@ static void place_bool_pools( map &md, const tripoint_bub_ms &current_tile,
     }
 }
 
-struct generator_vars {
-    int scaling_days_start;
-    int scaling_days_end;
-    int num_attempts;
-    int percent_chance;
-    int min_intensity;
-    int max_intensity;
-};
-
-static void GENERATOR_bash_damage( map &md,
-                                   std::list<tripoint_bub_ms> &all_points_in_map,
-                                   int days_since_cataclysm )
+static void execute_bash_damage( map &md,
+                                 std::list<tripoint_bub_ms> &all_points_in_map,
+                                 const pp_sub_generator &sg )
 {
-    // Later, this will be loaded from json.
-    generator_vars bash_vars{};
-    bash_vars.scaling_days_start = 0; // irrelevant for this one
-    bash_vars.scaling_days_end = days_since_cataclysm; // irrelevant for this one
-    bash_vars.num_attempts = 250; // Roughly half as many attempts as old version, may need tweaking
-    bash_vars.percent_chance = 10;
-    bash_vars.min_intensity = 6; // For this generator: Bash damage
-    bash_vars.max_intensity = 60; // For this generator: Bash damage
-
-    for( int i = 0; i < bash_vars.num_attempts; i++ ) {
-        if( !x_in_y( bash_vars.percent_chance, 100 ) ) {
-            continue; // failed roll
+    for( int i = 0; i < sg.attempts; i++ ) {
+        if( !x_in_y( sg.chance, 100 ) ) {
+            continue;
         }
         const tripoint_bub_ms current_tile = random_entry( all_points_in_map );
         if( md.has_flag_ter( ter_furn_flag::TFLAG_NATURAL_UNDERGROUND, current_tile ) ) {
             continue;
         }
-        md.bash( current_tile, rng( bash_vars.min_intensity, bash_vars.max_intensity ) );
+        md.bash( current_tile, rng( sg.min_intensity, sg.max_intensity ) );
     }
 }
 
-static void GENERATOR_move_items( map &md,
-                                  std::list<tripoint_bub_ms> &all_points_in_map,
-                                  int days_since_cataclysm )
+static void execute_move_items( map &md,
+                                std::list<tripoint_bub_ms> &all_points_in_map,
+                                const pp_sub_generator &sg )
 {
-    // Later, this will be loaded from json.
-    generator_vars mover_vars{};
-    mover_vars.scaling_days_start = 0; // irrelevant for this one, currently.
-    mover_vars.scaling_days_end = days_since_cataclysm; // irrelevant for this one
-
-    // NOTE: Each tile of items is fully iterated over, to eliminate the effects of stack ordering.
-    // Otherwise we would be biased towards the front of the stack
-    mover_vars.num_attempts = 250; // Roughly half as many attempts as old version, may need tweaking
-
-    mover_vars.percent_chance = 10;
-    mover_vars.min_intensity = 0; // For this generator: Min distance moved. Note: NOT IMPLEMENTED
-    mover_vars.max_intensity = 3; // For this generator: Max distance moved
-
-    for( int i = 0; i < mover_vars.num_attempts; i++ ) {
+    for( int i = 0; i < sg.attempts; i++ ) {
         const tripoint_bub_ms current_tile = random_entry( all_points_in_map );
         if( md.has_flag_ter( ter_furn_flag::TFLAG_NATURAL_UNDERGROUND, current_tile ) ) {
             continue;
         }
-        auto item_iterator = md.i_at( current_tile.xy() ).begin();
+        item_stack::iterator item_iterator = md.i_at( current_tile.xy() ).begin();
         while( item_iterator != md.i_at( current_tile.xy() ).end() ) {
-            // Some items must not be moved out of SEALED CONTAINER
             if( md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_SEALED, current_tile ) &&
                 md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_CONTAINER, current_tile ) ) {
-                // Seed should stay in their planter for map::grow_plant to grow them
                 if( md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_PLANT, current_tile ) &&
                     item_iterator->is_seed() ) {
                     item_iterator++;
@@ -275,13 +417,11 @@ static void GENERATOR_move_items( map &md,
                 }
             }
 
-            if( x_in_y( mover_vars.percent_chance, 100 ) ) {
-                // pick a new spot...
+            if( x_in_y( sg.chance, 100 ) ) {
                 tripoint_bub_ms destination_tile(
-                    current_tile.x() + rng( -mover_vars.max_intensity, mover_vars.max_intensity ),
-                    current_tile.y() + rng( -mover_vars.max_intensity, mover_vars.max_intensity ),
+                    current_tile.x() + rng( -sg.max_intensity, sg.max_intensity ),
+                    current_tile.y() + rng( -sg.max_intensity, sg.max_intensity ),
                     current_tile.z() );
-                // oops, don't place out of bounds. just skip moving
                 const bool outbounds_X = destination_tile.x() < 0 || destination_tile.x() >= SEEX * 2;
                 const bool outbounds_Y = destination_tile.y() < 0 || destination_tile.y() >= SEEY * 2;
                 const bool cannot_place = md.has_flag( ter_furn_flag::TFLAG_DESTROY_ITEM, destination_tile ) ||
@@ -291,9 +431,7 @@ static void GENERATOR_move_items( map &md,
                     continue;
                 } else {
                     item copy( *item_iterator );
-                    // add a copy of our item to the destination...
                     md.add_item( destination_tile, copy );
-                    // and erase the one at our source.
                     item_iterator = md.i_at( current_tile.xy() ).erase( item_iterator );
                 }
             } else {
@@ -305,155 +443,91 @@ static void GENERATOR_move_items( map &md,
 
 }
 
-static void GENERATOR_add_fire( map &md,
-                                std::list<tripoint_bub_ms> &all_points_in_map,
-                                int days_since_cataclysm )
+static void execute_add_fire( map &md,
+                              std::list<tripoint_bub_ms> &all_points_in_map,
+                              int days_since_cataclysm,
+                              const pp_sub_generator &sg )
 {
-    // Later, this will be loaded from json.
-    generator_vars fire_vars{};
-    fire_vars.scaling_days_start = 0;
-    fire_vars.scaling_days_end = 14;
+    const int percent_chance = std::max( sg.scaling_days_end - days_since_cataclysm, 0 );
 
-    // Placeholder. Number selected so that the # of fires is close to the old implementation.
-    fire_vars.num_attempts = 2;
-
-    // FIXME? I'm concerned by the fact that the initial chance scales higher the later the last scaling day is.
-    // This is not great, but it ramps down linearly without relying on magic numbers.
-    fire_vars.percent_chance = std::max( fire_vars.scaling_days_end - days_since_cataclysm, 0 );
-
-    fire_vars.min_intensity = 1; // For this generator: field intensity
-    fire_vars.max_intensity = 3; // For this generator: field intensity
-
-    for( int i = 0; i < fire_vars.num_attempts; i++ ) {
-        if( !x_in_y( fire_vars.percent_chance, 100 ) ) {
-            continue; // failed roll
+    for( int i = 0; i < sg.attempts; i++ ) {
+        if( !x_in_y( percent_chance, 100 ) ) {
+            continue;
         }
         const tripoint_bub_ms current_tile = random_entry( all_points_in_map );
         if( md.has_flag_ter( ter_furn_flag::TFLAG_NATURAL_UNDERGROUND, current_tile ) ) {
             continue;
         }
 
-        if( x_in_y( fire_vars.percent_chance, 100 ) ) {
-            // FIXME: Magic number 3. Replace with some value loaded into generator_vars?
-            if( md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_FLAMMABLE, current_tile ) ||
-                md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_FLAMMABLE_ASH, current_tile ) ||
-                md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_FLAMMABLE_HARD, current_tile ) ||
-                days_since_cataclysm < 3 ) {
-                // Only place fire on flammable surfaces unless the cataclysm started very recently
-                // Note that most floors are FLAMMABLE_HARD, this is fine. This check is primarily geared
-                // at preventing fire in the middle of roads or parking lots.
-                md.add_field( current_tile, field_fd_fire,
-                              rng( fire_vars.min_intensity, fire_vars.max_intensity ) );
-            }
+        if( md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_FLAMMABLE, current_tile ) ||
+            md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_FLAMMABLE_ASH, current_tile ) ||
+            md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_FLAMMABLE_HARD, current_tile ) ||
+            days_since_cataclysm < 3 ) {
+            md.add_field( current_tile, field_fd_fire,
+                          rng( sg.min_intensity, sg.max_intensity ) );
         }
 
     }
 
 }
 
-static void GENERATOR_pre_burn( map &md,
-                                std::list<tripoint_bub_ms> &all_points_in_map,
-                                int days_since_cataclysm )
+static void execute_pre_burn( map &md,
+                              std::list<tripoint_bub_ms> &all_points_in_map,
+                              int days_since_cataclysm,
+                              const pp_sub_generator &sg )
 {
-    // Later, this will be loaded from json.
-    generator_vars burnt_vars{};
-    // Fires are still raging around this time, but some start appearing
-    // Never appears before this date
-    burnt_vars.scaling_days_start = 3;
-
-    burnt_vars.scaling_days_end = 14; // Continues appearing at maximum appearance rate after this day
-    burnt_vars.num_attempts = 1; // Currently only applied to the whole map, so one pass.
-
-    burnt_vars.min_intensity = 6; // For this generator: % chance at start day
-    burnt_vars.max_intensity = 28; // For this generator: % chance at end day
-
-    // between start and end day we linearly interpolate.
     double lerp_scalar = static_cast<double>(
-                             static_cast<double>( days_since_cataclysm - burnt_vars.scaling_days_start ) /
-                             static_cast<double>( burnt_vars.scaling_days_end - burnt_vars.scaling_days_start ) );
-    burnt_vars.percent_chance = lerp( burnt_vars.min_intensity, burnt_vars.max_intensity, lerp_scalar );
-    // static values outside that range. Note we do not use std::clamp because the chance is *0* until the start day is reached
-    if( days_since_cataclysm < burnt_vars.scaling_days_start ) {
-        burnt_vars.percent_chance = 0;
-    } else if( days_since_cataclysm >= burnt_vars.scaling_days_end ) {
-        burnt_vars.percent_chance = burnt_vars.max_intensity;
+                             static_cast<double>( days_since_cataclysm - sg.scaling_days_start ) /
+                             static_cast<double>( sg.scaling_days_end - sg.scaling_days_start ) );
+    int percent_chance = lerp( sg.min_intensity, sg.max_intensity, lerp_scalar );
+    if( days_since_cataclysm < sg.scaling_days_start ) {
+        percent_chance = 0;
+    } else if( days_since_cataclysm >= sg.scaling_days_end ) {
+        percent_chance = sg.max_intensity;
     }
 
-    for( int i = 0; i < burnt_vars.num_attempts; i++ ) {
-        if( !x_in_y( burnt_vars.percent_chance, 100 ) ) {
-            continue; // failed roll
+    for( int i = 0; i < sg.attempts; i++ ) {
+        if( !x_in_y( percent_chance, 100 ) ) {
+            continue;
         }
         for( tripoint_bub_ms current_tile : all_points_in_map ) {
             if( md.has_flag_ter( ter_furn_flag::TFLAG_NATURAL_UNDERGROUND, current_tile ) ||
                 md.has_flag_ter( ter_furn_flag::TFLAG_GOES_DOWN, current_tile ) ||
                 md.has_flag_ter( ter_furn_flag::TFLAG_GOES_UP, current_tile ) ) {
-                // skip natural underground walls, or any stairs. (Even man-made or wooden stairs)
                 continue;
             }
             if( md.has_flag_ter( ter_furn_flag::TFLAG_WALL, current_tile ) ) {
-                // burnt wall
                 md.ter_set( current_tile.xy(), ter_t_wall_burnt );
             } else if( md.has_flag_ter( ter_furn_flag::TFLAG_INDOORS, current_tile ) ||
                        md.has_flag_ter( ter_furn_flag::TFLAG_DOOR, current_tile ) ) {
-                // if we're indoors but we're not a wall, then we must be a floor.
-                // doorways also get burned to the ground.
                 md.ter_set( current_tile.xy(), ter_t_floor_burnt );
             } else if( !md.has_flag_ter( ter_furn_flag::TFLAG_INDOORS, current_tile ) ) {
-                // if we're outside on ground level, burn it to dirt.
                 if( current_tile.z() == 0 ) {
                     md.ter_set( current_tile.xy(), ter_t_dirt );
                 }
             }
 
-            // destroy any furniture that is in the tile. it's been burned, after all.
             md.furn_set( current_tile.xy(), furn_str_id::NULL_ID() );
-
-            // destroy all items in the tile.
             md.i_clear( current_tile.xy() );
         }
     }
 }
 
-void GENERATOR_riot_damage( map &md, const tripoint_abs_omt &p, bool is_a_road )
+static void execute_place_blood( map &md,
+                                 std::list<tripoint_bub_ms> &all_points_in_map,
+                                 int days_since_cataclysm,
+                                 const pp_sub_generator &sg )
 {
-    std::list<tripoint_bub_ms> all_points_in_map;
-
-
-    int days_since_cataclysm = to_days<int>( calendar::turn - calendar::start_of_cataclysm );
-
-    // Placeholder / FIXME
-    // This assumes that we're only dealing with regular 24x24 OMTs. That is likely not the case.
-    for( int i = 0; i < SEEX * 2; i++ ) {
-        for( int n = 0; n < SEEY * 2; n++ ) {
-            tripoint_bub_ms current_tile( i, n, p.z() );
-            all_points_in_map.push_back( current_tile );
-        }
-    }
-
-    // Run sub generators associated with this generator. Currently hardcoded.
-    GENERATOR_bash_damage( md, all_points_in_map, days_since_cataclysm );
-    GENERATOR_move_items( md, all_points_in_map, days_since_cataclysm );
-    GENERATOR_add_fire( md, all_points_in_map, days_since_cataclysm );
-    // HACK: Don't burn roads to the ground! This should be resolved when the system is moved to json
-    if( !is_a_road ) {
-        GENERATOR_pre_burn( md, all_points_in_map, days_since_cataclysm );
-    }
-
-    // NOTE: Below currently only runs for bloodstains.
-    for( size_t i = 0; i < all_points_in_map.size(); i++ ) {
-        // Pick a tile at random!
+    for( int i = 0; i < sg.attempts; i++ ) {
         tripoint_bub_ms current_tile = random_entry( all_points_in_map );
 
-        // Do nothing at random!;
         if( x_in_y( 10, 100 ) ) {
             continue;
         }
-        // Skip naturally occuring underground wall tiles
         if( md.has_flag_ter( ter_furn_flag::TFLAG_NATURAL_UNDERGROUND, current_tile ) ) {
             continue;
         }
-        // Set some fields at random!
-        if( x_in_y( 15, 1000 ) ) {
+        if( x_in_y( sg.chance, 1000 ) ) {
             int behavior_roll = rng( 1, 100 );
 
             if( behavior_roll <= 20 ) {
@@ -470,12 +544,10 @@ void GENERATOR_riot_damage( map &md, const tripoint_abs_omt &p, bool is_a_road )
     }
 }
 
-void GENERATOR_aftershock_ruin( map &md, const tripoint_abs_omt &p )
+static void execute_aftershock_ruin( map &md, const tripoint_abs_omt &p )
 {
     std::list<tripoint_bub_ms> all_points_in_map;
 
-    // Placeholder / FIXME
-    // This assumes that we're only dealing with regular 24x24 OMTs. That is likely not the case.
     for( int i = 0; i < SEEX * 2; i++ ) {
         for( int n = 0; n < SEEY * 2; n++ ) {
             tripoint_bub_ms current_tile( i, n, p.z() );
@@ -496,7 +568,6 @@ void GENERATOR_aftershock_ruin( map &md, const tripoint_abs_omt &p )
             if( md.has_flag_ter( ter_furn_flag::TFLAG_NATURAL_UNDERGROUND, current_tile ) ||
                 md.has_flag_ter( ter_furn_flag::TFLAG_GOES_DOWN, current_tile ) ||
                 md.has_flag_ter( ter_furn_flag::TFLAG_GOES_UP, current_tile ) ) {
-                // skip natural underground walls, or any stairs.
                 continue;
             }
             if( !one_in( 8 ) ) {
@@ -566,6 +637,45 @@ void GENERATOR_aftershock_ruin( map &md, const tripoint_abs_omt &p )
                 md.furn_set( p, furn_str_id::NULL_ID() );
                 md.furn_set( p, furn_f_wreckage );
             }, current_tile.xy(), 3 );
+        }
+    }
+}
+
+void pp_generator::execute( map &md, const tripoint_abs_omt &p ) const
+{
+    std::list<tripoint_bub_ms> all_points_in_map;
+
+    for( int i = 0; i < SEEX * 2; i++ ) {
+        for( int n = 0; n < SEEY * 2; n++ ) {
+            all_points_in_map.emplace_back( i, n, p.z() );
+        }
+    }
+
+    const int days_since_cataclysm = to_days<int>( calendar::turn - calendar::start_of_cataclysm );
+
+    for( const pp_sub_generator &sg : sub_generators_ ) {
+        switch( sg.type ) {
+            case sub_generator_type::bash_damage:
+                execute_bash_damage( md, all_points_in_map, sg );
+                break;
+            case sub_generator_type::move_items:
+                execute_move_items( md, all_points_in_map, sg );
+                break;
+            case sub_generator_type::add_fire:
+                execute_add_fire( md, all_points_in_map, days_since_cataclysm, sg );
+                break;
+            case sub_generator_type::pre_burn:
+                execute_pre_burn( md, all_points_in_map, days_since_cataclysm, sg );
+                break;
+            case sub_generator_type::place_blood:
+                execute_place_blood( md, all_points_in_map, days_since_cataclysm, sg );
+                break;
+            case sub_generator_type::aftershock_ruin:
+                execute_aftershock_ruin( md, p );
+                break;
+            case sub_generator_type::last:
+                debugmsg( "Invalid sub_generator_type in pp_generator '%s'", id.str() );
+                break;
         }
     }
 }
