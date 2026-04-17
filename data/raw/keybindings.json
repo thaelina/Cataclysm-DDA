@@ -590,18 +590,6 @@
   },
   {
     "type": "keybinding",
-    "id": "SWITCH_SAFEMODE_OPTION",
-    "category": "SAFEMODE",
-    "name": "Enable safemode option",
-    "bindings": [
-      { "input_method": "keyboard_any", "key": "s" },
-      { "input_method": "keyboard_char", "key": "S" },
-      { "input_method": "keyboard_code", "key": "s", "mod": [ "shift" ] },
-      { "input_method": "gamepad", "key": "R_RADIAL_N" }
-    ]
-  },
-  {
-    "type": "keybinding",
     "id": "QUIT",
     "category": "SAFEMODE",
     "name": "Quit",
