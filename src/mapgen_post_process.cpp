@@ -527,67 +527,80 @@ static void execute_add_fire( map &md,
 
 }
 
-static void execute_pre_burn( map &md,
-                              std::list<tripoint_bub_ms> &all_points_in_map,
-                              int days_since_cataclysm,
-                              const pp_sub_generator &sg )
+// Apply pre_burn effects to every tile, skipping the probability gate.
+static void apply_pre_burn_tiles( map &md,
+                                  std::list<tripoint_bub_ms> &all_points_in_map )
 {
-    double lerp_scalar = static_cast<double>(
-                             static_cast<double>( days_since_cataclysm - sg.scaling_days_start ) /
-                             static_cast<double>( sg.scaling_days_end - sg.scaling_days_start ) );
+    for( tripoint_bub_ms current_tile : all_points_in_map ) {
+        if( md.has_flag_ter( ter_furn_flag::TFLAG_NATURAL_UNDERGROUND, current_tile ) ||
+            md.has_flag_ter( ter_furn_flag::TFLAG_GOES_DOWN, current_tile ) ||
+            md.has_flag_ter( ter_furn_flag::TFLAG_GOES_UP, current_tile ) ) {
+            continue;
+        }
+
+        const bool is_flammable_ter =
+            md.has_flag_ter( ter_furn_flag::TFLAG_FLAMMABLE, current_tile ) ||
+            md.has_flag_ter( ter_furn_flag::TFLAG_FLAMMABLE_ASH, current_tile ) ||
+            md.has_flag_ter( ter_furn_flag::TFLAG_FLAMMABLE_HARD, current_tile );
+
+        if( md.has_flag_ter( ter_furn_flag::TFLAG_WALL, current_tile ) ) {
+            if( is_flammable_ter ) {
+                md.ter_set( current_tile.xy(), ter_t_wall_burnt );
+            }
+        } else if( md.has_flag_ter( ter_furn_flag::TFLAG_INDOORS, current_tile ) ||
+                   md.has_flag_ter( ter_furn_flag::TFLAG_DOOR, current_tile ) ) {
+            if( is_flammable_ter ) {
+                md.ter_set( current_tile.xy(), ter_t_floor_burnt );
+            }
+        } else if( !md.has_flag_ter( ter_furn_flag::TFLAG_INDOORS, current_tile ) ) {
+            if( current_tile.z() == 0 ) {
+                if( md.has_flag_ter( ter_furn_flag::TFLAG_DIGGABLE, current_tile ) ||
+                    is_flammable_ter ) {
+                    md.ter_set( current_tile.xy(), ter_t_dirt );
+                }
+            }
+        }
+
+        if( md.has_furn( current_tile ) &&
+            ( md.has_flag_furn( ter_furn_flag::TFLAG_FLAMMABLE, current_tile ) ||
+              md.has_flag_furn( ter_furn_flag::TFLAG_FLAMMABLE_ASH, current_tile ) ||
+              md.has_flag_furn( ter_furn_flag::TFLAG_FLAMMABLE_HARD, current_tile ) ) ) {
+            md.furn_set( current_tile.xy(), furn_str_id::NULL_ID() );
+        }
+
+        if( !md.has_flag_ter( ter_furn_flag::TFLAG_SWIMMABLE, current_tile ) &&
+            !md.has_flag_ter( ter_furn_flag::TFLAG_LIQUID, current_tile ) ) {
+            md.i_clear( current_tile.xy() );
+        }
+    }
+}
+
+// Compute the time-dependent pre_burn probability as a percent in [0, 100].
+static int pre_burn_percent_chance( const pp_sub_generator &sg, int days_since_cataclysm )
+{
+    const double lerp_scalar = static_cast<double>(
+                                   days_since_cataclysm - sg.scaling_days_start ) /
+                               static_cast<double>( sg.scaling_days_end - sg.scaling_days_start );
     int percent_chance = lerp( sg.min_intensity, sg.max_intensity, lerp_scalar );
     if( days_since_cataclysm < sg.scaling_days_start ) {
         percent_chance = 0;
     } else if( days_since_cataclysm >= sg.scaling_days_end ) {
         percent_chance = sg.max_intensity;
     }
+    return percent_chance;
+}
 
+static void execute_pre_burn( map &md,
+                              std::list<tripoint_bub_ms> &all_points_in_map,
+                              int days_since_cataclysm,
+                              const pp_sub_generator &sg )
+{
+    const int percent_chance = pre_burn_percent_chance( sg, days_since_cataclysm );
     for( int i = 0; i < sg.attempts; i++ ) {
         if( !x_in_y( percent_chance, 100 ) ) {
             continue;
         }
-        for( tripoint_bub_ms current_tile : all_points_in_map ) {
-            if( md.has_flag_ter( ter_furn_flag::TFLAG_NATURAL_UNDERGROUND, current_tile ) ||
-                md.has_flag_ter( ter_furn_flag::TFLAG_GOES_DOWN, current_tile ) ||
-                md.has_flag_ter( ter_furn_flag::TFLAG_GOES_UP, current_tile ) ) {
-                continue;
-            }
-
-            const bool is_flammable_ter =
-                md.has_flag_ter( ter_furn_flag::TFLAG_FLAMMABLE, current_tile ) ||
-                md.has_flag_ter( ter_furn_flag::TFLAG_FLAMMABLE_ASH, current_tile ) ||
-                md.has_flag_ter( ter_furn_flag::TFLAG_FLAMMABLE_HARD, current_tile );
-
-            if( md.has_flag_ter( ter_furn_flag::TFLAG_WALL, current_tile ) ) {
-                if( is_flammable_ter ) {
-                    md.ter_set( current_tile.xy(), ter_t_wall_burnt );
-                }
-            } else if( md.has_flag_ter( ter_furn_flag::TFLAG_INDOORS, current_tile ) ||
-                       md.has_flag_ter( ter_furn_flag::TFLAG_DOOR, current_tile ) ) {
-                if( is_flammable_ter ) {
-                    md.ter_set( current_tile.xy(), ter_t_floor_burnt );
-                }
-            } else if( !md.has_flag_ter( ter_furn_flag::TFLAG_INDOORS, current_tile ) ) {
-                if( current_tile.z() == 0 ) {
-                    if( md.has_flag_ter( ter_furn_flag::TFLAG_DIGGABLE, current_tile ) ||
-                        is_flammable_ter ) {
-                        md.ter_set( current_tile.xy(), ter_t_dirt );
-                    }
-                }
-            }
-
-            if( md.has_furn( current_tile ) &&
-                ( md.has_flag_furn( ter_furn_flag::TFLAG_FLAMMABLE, current_tile ) ||
-                  md.has_flag_furn( ter_furn_flag::TFLAG_FLAMMABLE_ASH, current_tile ) ||
-                  md.has_flag_furn( ter_furn_flag::TFLAG_FLAMMABLE_HARD, current_tile ) ) ) {
-                md.furn_set( current_tile.xy(), furn_str_id::NULL_ID() );
-            }
-
-            if( !md.has_flag_ter( ter_furn_flag::TFLAG_SWIMMABLE, current_tile ) &&
-                !md.has_flag_ter( ter_furn_flag::TFLAG_LIQUID, current_tile ) ) {
-                md.i_clear( current_tile.xy() );
-            }
-        }
+        apply_pre_burn_tiles( md, all_points_in_map );
     }
 }
 
@@ -622,7 +635,8 @@ static void execute_place_blood( map &md,
     }
 }
 
-static void execute_aftershock_ruin( map &md, const tripoint_abs_omt &p )
+static void execute_aftershock_ruin( map &md, const tripoint_abs_omt &p,
+                                     pp_sub_decision *dec )
 {
     std::list<tripoint_bub_ms> all_points_in_map;
 
@@ -637,9 +651,18 @@ static void execute_aftershock_ruin( map &md, const tripoint_abs_omt &p )
     bool above_ruined = overmap_buffer.ter( tripoint_abs_omt( p.x(), p.y(),
                                             p.z() + 1 ) ) == oter_afs_ruins_dynamic;
 
+    // applied -> fully ruined, skipped -> smashed-up, otherwise 50% roll.
+    bool full_ruin_roll;
+    if( dec && dec->st == pp_sub_decision::status::applied ) {
+        full_ruin_roll = true;
+    } else if( dec && dec->st == pp_sub_decision::status::skipped ) {
+        full_ruin_roll = false;
+    } else {
+        full_ruin_roll = x_in_y( 1, 2 );
+    }
 
     //fully ruined
-    if( ( x_in_y( 1, 2 ) && above_open_air ) || above_ruined ) {
+    if( ( full_ruin_roll && above_open_air ) || above_ruined ) {
         overmap_buffer.ter_set( p, oter_afs_ruins_dynamic );
 
         for( const tripoint_bub_ms &current_tile : all_points_in_map ) {
@@ -764,11 +787,47 @@ void pp_resolved_generator::deserialize( const JsonValue &jv )
     jo.read( "sub_decisions", sub_decisions );
 }
 
+// Mismatch on (type, ordinal) means a stale or not-yet-written entry; callers
+// fall back to fresh rolling.
+static pp_sub_decision *find_decision( std::vector<pp_sub_decision> *decisions,
+                                       sub_generator_type type, uint8_t ordinal )
+{
+    if( !decisions ) {
+        return nullptr;
+    }
+    for( pp_sub_decision &dec : *decisions ) {
+        if( dec.type == type && dec.ordinal == ordinal ) {
+            return &dec;
+        }
+    }
+    return nullptr;
+}
+
+// Uses rng_sequence (deterministic seeded sequence from rng.h) so the resolve
+// step doesn't depend on global RNG state at first-visit time.
+static bool resolve_pp_decision( const pp_sub_generator &sg, int days_since_cataclysm,
+                                 uint32_t seed )
+{
+    const int seed_int = static_cast<int>( seed );
+    switch( sg.type ) {
+        case sub_generator_type::pre_burn: {
+            const int percent_chance = pre_burn_percent_chance( sg, days_since_cataclysm );
+            const std::vector<int> seq = rng_sequence( 1, 0, 99, seed_int );
+            return seq[0] < percent_chance;
+        }
+        case sub_generator_type::aftershock_ruin: {
+            // Fresh x_in_y(1, 2): fully-ruined rolls at 50%.
+            const std::vector<int> seq = rng_sequence( 1, 0, 1, seed_int );
+            return seq[0] == 0;
+        }
+        default:
+            return true;
+    }
+}
+
 void pp_generator::execute( map &md, const tripoint_abs_omt &p,
                             std::vector<pp_sub_decision> *decisions ) const
 {
-    ( void )decisions;
-
     std::list<tripoint_bub_ms> all_points_in_map;
 
     for( int i = 0; i < SEEX * 2; i++ ) {
@@ -779,7 +838,21 @@ void pp_generator::execute( map &md, const tripoint_abs_omt &p,
 
     const int days_since_cataclysm = to_days<int>( calendar::turn - calendar::start_of_cataclysm );
 
+    std::map<sub_generator_type, uint8_t> type_counts;
     for( const pp_sub_generator &sg : sub_generators_ ) {
+        const uint8_t ordinal = type_counts[sg.type]++;
+
+        // applied/skipped mapping is type-specific and lives in each case below.
+        pp_sub_decision *dec = nullptr;
+        if( sg.scope == pp_sub_generator_scope::overmap_special ) {
+            dec = find_decision( decisions, sg.type, ordinal );
+            if( dec && dec->st == pp_sub_decision::status::not_evaluated ) {
+                const bool applied = resolve_pp_decision( sg, days_since_cataclysm, dec->seed );
+                dec->st = applied ? pp_sub_decision::status::applied
+                          : pp_sub_decision::status::skipped;
+            }
+        }
+
         switch( sg.type ) {
             case sub_generator_type::bash_damage:
                 execute_bash_damage( md, all_points_in_map, sg );
@@ -791,13 +864,19 @@ void pp_generator::execute( map &md, const tripoint_abs_omt &p,
                 execute_add_fire( md, all_points_in_map, days_since_cataclysm, sg );
                 break;
             case sub_generator_type::pre_burn:
-                execute_pre_burn( md, all_points_in_map, days_since_cataclysm, sg );
+                if( dec && dec->st == pp_sub_decision::status::applied ) {
+                    apply_pre_burn_tiles( md, all_points_in_map );
+                } else if( dec && dec->st == pp_sub_decision::status::skipped ) {
+                    // Building rolled not-burned for this special.
+                } else {
+                    execute_pre_burn( md, all_points_in_map, days_since_cataclysm, sg );
+                }
                 break;
             case sub_generator_type::place_blood:
                 execute_place_blood( md, all_points_in_map, days_since_cataclysm, sg );
                 break;
             case sub_generator_type::aftershock_ruin:
-                execute_aftershock_ruin( md, p );
+                execute_aftershock_ruin( md, p, dec );
                 break;
             case sub_generator_type::last:
                 debugmsg( "Invalid sub_generator_type in pp_generator '%s'", id.str() );
