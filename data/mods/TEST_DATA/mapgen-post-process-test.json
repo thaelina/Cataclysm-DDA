@@ -75,5 +75,20 @@
     "type": "pp_generator",
     "id": "test_pp_custom",
     "sub_generators": [ { "type": "aftershock_ruin" } ]
+  },
+  {
+    "type": "pp_generator",
+    "id": "test_pp_pre_burn_only",
+    "//": "Isolated pre_burn for material immunity tests. 100% chance guarantees it fires.",
+    "sub_generators": [
+      {
+        "type": "pre_burn",
+        "attempts": 1,
+        "min_intensity": 100,
+        "max_intensity": 100,
+        "scaling_days_start": 0,
+        "scaling_days_end": 1
+      }
+    ]
   }
 ]

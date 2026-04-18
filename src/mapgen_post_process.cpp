@@ -496,19 +496,41 @@ static void execute_pre_burn( map &md,
                 md.has_flag_ter( ter_furn_flag::TFLAG_GOES_UP, current_tile ) ) {
                 continue;
             }
+
+            const bool is_flammable_ter =
+                md.has_flag_ter( ter_furn_flag::TFLAG_FLAMMABLE, current_tile ) ||
+                md.has_flag_ter( ter_furn_flag::TFLAG_FLAMMABLE_ASH, current_tile ) ||
+                md.has_flag_ter( ter_furn_flag::TFLAG_FLAMMABLE_HARD, current_tile );
+
             if( md.has_flag_ter( ter_furn_flag::TFLAG_WALL, current_tile ) ) {
-                md.ter_set( current_tile.xy(), ter_t_wall_burnt );
+                if( is_flammable_ter ) {
+                    md.ter_set( current_tile.xy(), ter_t_wall_burnt );
+                }
             } else if( md.has_flag_ter( ter_furn_flag::TFLAG_INDOORS, current_tile ) ||
                        md.has_flag_ter( ter_furn_flag::TFLAG_DOOR, current_tile ) ) {
-                md.ter_set( current_tile.xy(), ter_t_floor_burnt );
+                if( is_flammable_ter ) {
+                    md.ter_set( current_tile.xy(), ter_t_floor_burnt );
+                }
             } else if( !md.has_flag_ter( ter_furn_flag::TFLAG_INDOORS, current_tile ) ) {
                 if( current_tile.z() == 0 ) {
-                    md.ter_set( current_tile.xy(), ter_t_dirt );
+                    if( md.has_flag_ter( ter_furn_flag::TFLAG_DIGGABLE, current_tile ) ||
+                        is_flammable_ter ) {
+                        md.ter_set( current_tile.xy(), ter_t_dirt );
+                    }
                 }
             }
 
-            md.furn_set( current_tile.xy(), furn_str_id::NULL_ID() );
-            md.i_clear( current_tile.xy() );
+            if( md.has_furn( current_tile ) &&
+                ( md.has_flag_furn( ter_furn_flag::TFLAG_FLAMMABLE, current_tile ) ||
+                  md.has_flag_furn( ter_furn_flag::TFLAG_FLAMMABLE_ASH, current_tile ) ||
+                  md.has_flag_furn( ter_furn_flag::TFLAG_FLAMMABLE_HARD, current_tile ) ) ) {
+                md.furn_set( current_tile.xy(), furn_str_id::NULL_ID() );
+            }
+
+            if( !md.has_flag_ter( ter_furn_flag::TFLAG_SWIMMABLE, current_tile ) &&
+                !md.has_flag_ter( ter_furn_flag::TFLAG_LIQUID, current_tile ) ) {
+                md.i_clear( current_tile.xy() );
+            }
         }
     }
 }
