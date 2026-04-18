@@ -34,6 +34,7 @@
 #include "map_extras.h"
 #include "map_iterator.h"
 #include "mapbuffer.h"
+#include "mapgen_post_process.h"
 #include "math_defines.h"
 #include "messages.h"
 #include "mongroup.h"
@@ -392,6 +393,15 @@ std::optional<mapgen_arguments> *overmap::mapgen_args( const tripoint_om_omt &p 
 {
     auto it = mapgen_args_index.find( p );
     if( it == mapgen_args_index.end() ) {
+        return nullptr;
+    }
+    return it->second;
+}
+
+std::vector<pp_resolved_generator> *overmap::pp_decisions( const tripoint_om_omt &p )
+{
+    auto it = pp_decisions_index.find( p );
+    if( it == pp_decisions_index.end() ) {
         return nullptr;
     }
     return it->second;

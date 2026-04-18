@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -6,7 +7,10 @@
 #include "cata_catch.h"
 #include "coordinates.h"
 #include "field.h"
+#include "flexbuffer_json.h"
 #include "item.h"
+#include "json.h"
+#include "json_loader.h"
 #include "map.h"
 #include "map_helpers.h"
 #include "map_scale_constants.h"
@@ -853,4 +857,150 @@ TEST_CASE( "post_process_real_core_exempt", "[mapgen][post_process]" )
     tm.delete_unmerged_submaps();
     clear_overmaps();
 }
+
+TEST_CASE( "post_process_scope_field_loading", "[mapgen][post_process]" )
+{
+    // test_pp_riot is defined without explicit scope -- all sub-generators default to omt.
+    SECTION( "default scope is omt" ) {
+        const pp_generator &riot = pp_generator_test_pp_riot.obj();
+        for( const pp_sub_generator &sg : riot.sub_generators() ) {
+            CHECK( sg.scope == pp_sub_generator_scope::omt );
+        }
+    }
+}
+
+static std::string serialize_sub_decision( const pp_sub_decision &dec )
+{
+    std::ostringstream os;
+    JsonOut jsout( os );
+    dec.serialize( jsout );
+    return os.str();
+}
+
+static pp_sub_decision deserialize_sub_decision( const std::string &json_str )
+{
+    pp_sub_decision dec;
+    JsonValue jv = json_loader::from_string( json_str );
+    dec.deserialize( jv );
+    return dec;
+}
+
+TEST_CASE( "post_process_sub_decision_roundtrip", "[mapgen][post_process]" )
+{
+    SECTION( "not_evaluated + seed 0" ) {
+        pp_sub_decision a;
+        a.type = sub_generator_type::pre_burn;
+        a.ordinal = 0;
+        a.st = pp_sub_decision::status::not_evaluated;
+        a.seed = 0;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.type == a.type );
+        CHECK( b.ordinal == a.ordinal );
+        CHECK( b.st == a.st );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "applied + INT_MAX seed" ) {
+        pp_sub_decision a;
+        a.type = sub_generator_type::aftershock_ruin;
+        a.ordinal = 0;
+        a.st = pp_sub_decision::status::applied;
+        a.seed = 0x7FFFFFFF;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.type == a.type );
+        CHECK( b.ordinal == a.ordinal );
+        CHECK( b.st == a.st );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "applied + seed above INT_MAX (upper half of uint32_t range)" ) {
+        // FNV-1a over typical inputs can produce seeds in [INT_MAX+1, UINT_MAX].
+        // Naive next_int() deserialization would fail or truncate these.
+        pp_sub_decision a;
+        a.type = sub_generator_type::pre_burn;
+        a.ordinal = 0;
+        a.st = pp_sub_decision::status::applied;
+        a.seed = 0x80000001u;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "applied + UINT_MAX seed" ) {
+        pp_sub_decision a;
+        a.type = sub_generator_type::pre_burn;
+        a.ordinal = 0;
+        a.st = pp_sub_decision::status::applied;
+        a.seed = 0xFFFFFFFFu;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "skipped + arbitrary ordinal" ) {
+        pp_sub_decision a;
+        a.type = sub_generator_type::pre_burn;
+        a.ordinal = 3;
+        a.st = pp_sub_decision::status::skipped;
+        a.seed = 12345;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.type == a.type );
+        CHECK( b.ordinal == a.ordinal );
+        CHECK( b.st == a.st );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "unknown status value clamps to not_evaluated" ) {
+        // Hand-crafted JSON with an out-of-range status int (future enum value).
+        const std::string json_str = "[\"pre_burn\", 0, 99, 42]";
+        pp_sub_decision b = deserialize_sub_decision( json_str );
+        CHECK( b.st == pp_sub_decision::status::not_evaluated );
+        CHECK( b.seed == 42 );
+    }
+}
+
+TEST_CASE( "post_process_resolved_generator_roundtrip", "[mapgen][post_process]" )
+{
+    pp_resolved_generator a;
+    a.generator = pp_generator_test_pp_riot;
+    pp_sub_decision d1;
+    d1.type = sub_generator_type::pre_burn;
+    d1.ordinal = 0;
+    d1.st = pp_sub_decision::status::applied;
+    d1.seed = 1111;
+    a.sub_decisions.push_back( d1 );
+    pp_sub_decision d2;
+    d2.type = sub_generator_type::aftershock_ruin;
+    d2.ordinal = 0;
+    d2.st = pp_sub_decision::status::skipped;
+    d2.seed = 2222;
+    a.sub_decisions.push_back( d2 );
+
+    std::ostringstream os;
+    JsonOut jsout( os );
+    a.serialize( jsout );
+    pp_resolved_generator b;
+    JsonValue jv = json_loader::from_string( os.str() );
+    b.deserialize( jv );
+
+    CHECK( b.generator == a.generator );
+    REQUIRE( b.sub_decisions.size() == a.sub_decisions.size() );
+    for( size_t i = 0; i < a.sub_decisions.size(); i++ ) {
+        CHECK( b.sub_decisions[i].type == a.sub_decisions[i].type );
+        CHECK( b.sub_decisions[i].ordinal == a.sub_decisions[i].ordinal );
+        CHECK( b.sub_decisions[i].st == a.sub_decisions[i].st );
+        CHECK( b.sub_decisions[i].seed == a.sub_decisions[i].seed );
+    }
+}
+
+TEST_CASE( "post_process_resolved_generator_empty_sub_decisions", "[mapgen][post_process]" )
+{
+    pp_resolved_generator a;
+    a.generator = pp_generator_test_pp_riot;
+    // sub_decisions intentionally empty
+
+    std::ostringstream os;
+    JsonOut jsout( os );
+    a.serialize( jsout );
+    pp_resolved_generator b;
+    JsonValue jv = json_loader::from_string( os.str() );
+    b.deserialize( jv );
+
+    CHECK( b.generator == a.generator );
+    CHECK( b.sub_decisions.empty() );
+}
+
 

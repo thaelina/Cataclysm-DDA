@@ -4,18 +4,22 @@
 #include <cstddef>
 #include <functional>
 #include <list>
+#include <map>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "calendar.h"
 #include "cata_utility.h"
 #include "coordinates.h"
 #include "debug.h"
 #include "drawing_primitives.h"
+#include "enum_conversions.h"
 #include "flexbuffer_json.h"
 #include "generic_factory.h"
 #include "item.h"
 #include "item_stack.h"
+#include "json.h"
 #include "map.h"
 #include "map_scale_constants.h"
 #include "mapdata.h"
@@ -98,6 +102,20 @@ std::string enum_to_string<sub_generator_type>( sub_generator_type data )
     }
     cata_fatal( "Invalid sub_generator_type" );
 }
+
+template<>
+std::string enum_to_string<pp_sub_generator_scope>( pp_sub_generator_scope data )
+{
+    switch( data ) {
+        // *INDENT-OFF*
+        case pp_sub_generator_scope::omt: return "omt";
+        case pp_sub_generator_scope::overmap_special: return "overmap_special";
+        // *INDENT-ON*
+        case pp_sub_generator_scope::last:
+            break;
+    }
+    cata_fatal( "Invalid pp_sub_generator_scope" );
+}
 } // namespace io
 
 void pp_generator::load( const JsonObject &jo, std::string_view )
@@ -123,6 +141,7 @@ void pp_sub_generator::load( const JsonObject &jo )
     optional( jo, false, "max_intensity", max_intensity, 0 );
     optional( jo, false, "scaling_days_start", scaling_days_start, 0 );
     optional( jo, false, "scaling_days_end", scaling_days_end, 0 );
+    optional( jo, false, "scope", scope, pp_sub_generator_scope::omt );
 }
 
 void pp_generator::check() const
@@ -132,6 +151,29 @@ void pp_generator::check() const
     }
     for( const pp_sub_generator &sg : sub_generators_ ) {
         sg.check( id.str() );
+    }
+    // Uniqueness rule: when a sub_generator_type has any overmap_special-scoped
+    // entry, it must be the ONLY entry of that type in this generator. This
+    // guarantees the persisted (type, ordinal=0) identity is stable across
+    // reorders and additions of omt-scoped entries.
+    std::map<sub_generator_type, int> total_counts;
+    std::map<sub_generator_type, int> special_counts;
+    for( const pp_sub_generator &sg : sub_generators_ ) {
+        total_counts[sg.type]++;
+        if( sg.scope == pp_sub_generator_scope::overmap_special ) {
+            special_counts[sg.type]++;
+        }
+    }
+    for( const std::pair<const sub_generator_type, int> &entry : special_counts ) {
+        const sub_generator_type t = entry.first;
+        const int total = total_counts[t];
+        if( entry.second > 1 || total > 1 ) {
+            debugmsg( "pp_generator '%s': sub_generator_type '%s' has an overmap_special-"
+                      "scoped entry but also %d other entries of the same type.  "
+                      "When scope is overmap_special, only one entry of that type is "
+                      "allowed in a generator.",
+                      id.str(), io::enum_to_string( t ), total - 1 );
+        }
     }
 }
 
@@ -220,6 +262,20 @@ void pp_sub_generator::check( const std::string &ctx ) const
     if( min_intensity > max_intensity && max_intensity != 0 ) {
         debugmsg( "pp_generator '%s' %s: min_intensity > max_intensity",
                   ctx, tname );
+    }
+
+    if( scope == pp_sub_generator_scope::overmap_special ) {
+        // Only pre_burn and aftershock_ruin fit the single-bool shared-decision model.
+        if( type != sub_generator_type::pre_burn &&
+            type != sub_generator_type::aftershock_ruin ) {
+            debugmsg( "pp_generator '%s' %s: scope 'overmap_special' not supported "
+                      "for this sub-generator type", ctx, tname );
+        }
+        // Multi-attempt semantics cannot be encoded as one shared bool decision.
+        if( type == sub_generator_type::pre_burn && attempts > 1 ) {
+            debugmsg( "pp_generator '%s' %s: scope 'overmap_special' requires "
+                      "attempts<=1, got %d", ctx, tname, attempts );
+        }
     }
 }
 
@@ -663,8 +719,56 @@ static void execute_aftershock_ruin( map &md, const tripoint_abs_omt &p )
     }
 }
 
-void pp_generator::execute( map &md, const tripoint_abs_omt &p ) const
+void pp_sub_decision::serialize( JsonOut &jsout ) const
 {
+    jsout.start_array();
+    jsout.write( io::enum_to_string( type ) );
+    jsout.write( static_cast<int>( ordinal ) );
+    jsout.write( static_cast<int>( st ) );
+    jsout.write( seed );
+    jsout.end_array();
+}
+
+void pp_sub_decision::deserialize( const JsonValue &jv )
+{
+    JsonArray ja = jv;
+    std::string type_str = ja.next_string();
+    type = io::string_to_enum<sub_generator_type>( type_str );
+    ordinal = static_cast<uint8_t>( ja.next_int() );
+    const int raw_st = ja.next_int();
+    // Clamp unknown future enum values to not_evaluated for forward compat.
+    if( raw_st >= 0 && raw_st <= static_cast<int>( status::skipped ) ) {
+        st = static_cast<status>( raw_st );
+    } else {
+        st = status::not_evaluated;
+    }
+    // Read seed as full uint32_t. JsonValue::read(unsigned int&) handles
+    // the full unsigned range; next_int() would truncate values above INT_MAX.
+    unsigned int seed_raw = 0;
+    ja.read_next( seed_raw, true );
+    seed = static_cast<uint32_t>( seed_raw );
+}
+
+void pp_resolved_generator::serialize( JsonOut &jsout ) const
+{
+    jsout.start_object();
+    jsout.member( "generator", generator );
+    jsout.member( "sub_decisions", sub_decisions );
+    jsout.end_object();
+}
+
+void pp_resolved_generator::deserialize( const JsonValue &jv )
+{
+    JsonObject jo = jv;
+    jo.read( "generator", generator );
+    jo.read( "sub_decisions", sub_decisions );
+}
+
+void pp_generator::execute( map &md, const tripoint_abs_omt &p,
+                            std::vector<pp_sub_decision> *decisions ) const
+{
+    ( void )decisions;
+
     std::list<tripoint_bub_ms> all_points_in_map;
 
     for( int i = 0; i < SEEX * 2; i++ ) {
