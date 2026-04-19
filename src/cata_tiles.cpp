@@ -3489,13 +3489,13 @@ bool cata_tiles::draw_sprite_at(
         } else if( !iso ) {
             switch( rota % 4 ) {
                 case 1:
-                    render_angle = -90;
+                    render_angle = 90;
                     break;
                 case 2:
                     render_flip = static_cast<SDL_RendererFlip>( SDL_FLIP_HORIZONTAL | SDL_FLIP_VERTICAL );
                     break;
                 case 3:
-                    render_angle = 90;
+                    render_angle = -90;
                     break;
                 default:
                     break;
@@ -3537,7 +3537,7 @@ bool cata_tiles::draw_sprite_at(
 #endif
                     if( !iso ) {
                         // never rotate isometric tiles
-                        ret = sprite_tex->render_copy_ex( renderer, &destination, -90, nullptr,
+                        ret = sprite_tex->render_copy_ex( renderer, &destination, 90, nullptr,
                                                           SDL_FLIP_NONE );
                     } else {
                         ret = sprite_tex->render_copy_ex( renderer, &destination, 0, nullptr,
@@ -3567,7 +3567,7 @@ bool cata_tiles::draw_sprite_at(
 #endif
                     if( !iso ) {
                         // never rotate isometric tiles
-                        ret = sprite_tex->render_copy_ex( renderer, &destination, 90, nullptr,
+                        ret = sprite_tex->render_copy_ex( renderer, &destination, -90, nullptr,
                                                           SDL_FLIP_NONE );
                     } else {
                         ret = sprite_tex->render_copy_ex( renderer, &destination, 0, nullptr,
@@ -5516,19 +5516,19 @@ void cata_tiles::get_rotation_and_subtile( const char val, const char rot_to, in
             // horizontal end piece E
             subtile = end_piece;
             if( no_rotation ) {
-                rotation = 3;
+                rotation = 1;
                 break;
             }
-            rotation = 3 + 4 * get_rotation_edge_ew( rot_to );
+            rotation = 1 + 4 * get_rotation_edge_ew( rot_to );
             break;
         case 2:
             // horizontal end piece W
             subtile = end_piece;
             if( no_rotation ) {
-                rotation = 1;
+                rotation = 3;
                 break;
             }
-            rotation = 1 + 4 * get_rotation_edge_ew( rot_to );
+            rotation = 3 + 4 * get_rotation_edge_ew( rot_to );
             break;
         case 1:
             // vertical end piece N
@@ -5574,7 +5574,7 @@ void cata_tiles::get_rotation_and_subtile( const char val, const char rot_to, in
             break;
         case 10:
             subtile = corner;
-            rotation = 1;
+            rotation = 3;
             break;
         case 3:
             subtile = corner;
@@ -5582,7 +5582,7 @@ void cata_tiles::get_rotation_and_subtile( const char val, const char rot_to, in
             break;
         case 5:
             subtile = corner;
-            rotation = 3;
+            rotation = 1;
             break;
         // all t_connections
         case 14:
@@ -5591,7 +5591,7 @@ void cata_tiles::get_rotation_and_subtile( const char val, const char rot_to, in
             break;
         case 11:
             subtile = t_connection;
-            rotation = 1;
+            rotation = 3;
             break;
         case 7:
             subtile = t_connection;
@@ -5599,7 +5599,7 @@ void cata_tiles::get_rotation_and_subtile( const char val, const char rot_to, in
             break;
         case 13:
             subtile = t_connection;
-            rotation = 3;
+            rotation = 1;
             break;
     }
 }
@@ -5663,26 +5663,26 @@ int cata_tiles::get_rotation_unconnected( const char rot_to )
             rotation = 2;
             break;
         case static_cast<int>( NEIGHBOUR::EAST ):
-            rotation = 3;
+            rotation = 1;
             break;
         case static_cast<int>( NEIGHBOUR::SOUTH ):
             rotation = 0;
             break;
         case static_cast<int>( NEIGHBOUR::WEST ):
-            rotation = 1;
+            rotation = 3;
             break;
         // Two tiles, resulting in diagonal
         case 10: // NE
             rotation = 6;
             break;
         case 3: // SE
-            rotation = 7;
+            rotation = 5;
             break;
         case 5: // SW
             rotation = 4;
             break;
         case 12: // NW
-            rotation = 5;
+            rotation = 7;
             break;
         // Cases for three tiles to rotate to -> easy
         // Arranged to fallback / modulo to fitting index 0-4
@@ -5690,13 +5690,13 @@ int cata_tiles::get_rotation_unconnected( const char rot_to )
             rotation = 10;
             break;
         case 11: // 3 but west --> modulo = east
-            rotation = 11;
+            rotation = 9;
             break;
         case 7: // 3 but north --> modulo = south
             rotation = 8;
             break;
         case 13: // 3 but east --> modulo = west
-            rotation = 9;
+            rotation = 11;
             break;
         // Two opposing tiles, (No tiles, all tiles; see first cases)
         case 9: // N-S

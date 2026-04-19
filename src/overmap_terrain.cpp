@@ -816,7 +816,7 @@ void oter_t::get_rotation_and_subtile( int &rotation, int &subtile ) const
 {
     if( is_linear() ) {
         const om_lines::type &t = om_lines::all[line];
-        rotation = t.rotation;
+        rotation = ( 4 - t.rotation ) % 4;;
         subtile = t.subtile;
     } else if( is_rotatable() ) {
         rotation = static_cast<int>( get_dir() );
