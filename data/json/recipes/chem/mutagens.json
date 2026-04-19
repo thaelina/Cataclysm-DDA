@@ -27,7 +27,7 @@
     ],
     "components": [
       [
-        [ "tallow_tainted", 2 ],
+        [ "fat_tainted", 2 ],
         [ "meat_tainted", 3 ],
         [ "meat_tainted_human", 3 ],
         [ "dry_meat_tainted", 3 ],

@@ -770,6 +770,11 @@
   },
   {
     "type": "MIGRATION",
+    "id": "tallow_tainted",
+    "replace": "tallow"
+  },
+  {
+    "type": "MIGRATION",
     "id": "button_steel",
     "replace": "button_plastic",
     "variant": "steel"
