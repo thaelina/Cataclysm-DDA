@@ -775,6 +775,11 @@
   },
   {
     "type": "MIGRATION",
+    "id": "dry_meat_tainted",
+    "replace": "meat_tainted"
+  },
+  {
+    "type": "MIGRATION",
     "id": "button_steel",
     "replace": "button_plastic",
     "variant": "steel"
