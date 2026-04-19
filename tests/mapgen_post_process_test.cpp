@@ -1,4 +1,6 @@
 #include <cstddef>
+#include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -6,13 +8,18 @@
 #include "cata_catch.h"
 #include "coordinates.h"
 #include "field.h"
+#include "flexbuffer_json.h"
 #include "item.h"
+#include "json.h"
+#include "json_loader.h"
+#include "city.h"
 #include "map.h"
 #include "map_helpers.h"
 #include "map_scale_constants.h"
 #include "mapbuffer.h"
 #include "mapgen_post_process.h"
 #include "omdata.h"
+#include "overmap.h"
 #include "overmapbuffer.h"
 #include "player_helpers.h"
 #include "point.h"
@@ -38,6 +45,9 @@ static const oter_str_id oter_test_pp_riot_building( "test_pp_riot_building" );
 
 static const oter_type_str_id oter_type_test_pp_field_inherit_child(
     "test_pp_field_inherit_child" );
+
+static const overmap_special_id
+overmap_special_test_pp_multi_z_special( "test_pp_multi_z_special" );
 
 static const pp_generator_id pp_generator_riot_damage( "riot_damage" );
 static const pp_generator_id pp_generator_riot_damage_road( "riot_damage_road" );
@@ -853,4 +863,328 @@ TEST_CASE( "post_process_real_core_exempt", "[mapgen][post_process]" )
     tm.delete_unmerged_submaps();
     clear_overmaps();
 }
+
+TEST_CASE( "post_process_scope_field_loading", "[mapgen][post_process]" )
+{
+    const pp_generator &riot = pp_generator_test_pp_riot.obj();
+    SECTION( "sub-generators without scope default to omt" ) {
+        // Only pre_burn is annotated; other sub-generators retain default scope.
+        for( const pp_sub_generator &sg : riot.sub_generators() ) {
+            if( sg.type != sub_generator_type::pre_burn ) {
+                CHECK( sg.scope == pp_sub_generator_scope::omt );
+            }
+        }
+    }
+    SECTION( "pre_burn reads explicit overmap_special scope" ) {
+        bool found_pre_burn = false;
+        for( const pp_sub_generator &sg : riot.sub_generators() ) {
+            if( sg.type == sub_generator_type::pre_burn ) {
+                found_pre_burn = true;
+                CHECK( sg.scope == pp_sub_generator_scope::overmap_special );
+            }
+        }
+        CHECK( found_pre_burn );
+    }
+}
+
+static std::string serialize_sub_decision( const pp_sub_decision &dec )
+{
+    std::ostringstream os;
+    JsonOut jsout( os );
+    dec.serialize( jsout );
+    return os.str();
+}
+
+static pp_sub_decision deserialize_sub_decision( const std::string &json_str )
+{
+    pp_sub_decision dec;
+    JsonValue jv = json_loader::from_string( json_str );
+    dec.deserialize( jv );
+    return dec;
+}
+
+TEST_CASE( "post_process_sub_decision_roundtrip", "[mapgen][post_process]" )
+{
+    SECTION( "not_evaluated + seed 0" ) {
+        pp_sub_decision a;
+        a.type = sub_generator_type::pre_burn;
+        a.ordinal = 0;
+        a.st = pp_sub_decision::status::not_evaluated;
+        a.seed = 0;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.type == a.type );
+        CHECK( b.ordinal == a.ordinal );
+        CHECK( b.st == a.st );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "applied + INT_MAX seed" ) {
+        pp_sub_decision a;
+        a.type = sub_generator_type::aftershock_ruin;
+        a.ordinal = 0;
+        a.st = pp_sub_decision::status::applied;
+        a.seed = 0x7FFFFFFF;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.type == a.type );
+        CHECK( b.ordinal == a.ordinal );
+        CHECK( b.st == a.st );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "applied + seed above INT_MAX (upper half of uint32_t range)" ) {
+        // FNV-1a over typical inputs can produce seeds in [INT_MAX+1, UINT_MAX].
+        // Naive next_int() deserialization would fail or truncate these.
+        pp_sub_decision a;
+        a.type = sub_generator_type::pre_burn;
+        a.ordinal = 0;
+        a.st = pp_sub_decision::status::applied;
+        a.seed = 0x80000001u;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "applied + UINT_MAX seed" ) {
+        pp_sub_decision a;
+        a.type = sub_generator_type::pre_burn;
+        a.ordinal = 0;
+        a.st = pp_sub_decision::status::applied;
+        a.seed = 0xFFFFFFFFu;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "skipped + arbitrary ordinal" ) {
+        pp_sub_decision a;
+        a.type = sub_generator_type::pre_burn;
+        a.ordinal = 3;
+        a.st = pp_sub_decision::status::skipped;
+        a.seed = 12345;
+        pp_sub_decision b = deserialize_sub_decision( serialize_sub_decision( a ) );
+        CHECK( b.type == a.type );
+        CHECK( b.ordinal == a.ordinal );
+        CHECK( b.st == a.st );
+        CHECK( b.seed == a.seed );
+    }
+    SECTION( "unknown status value clamps to not_evaluated" ) {
+        // Hand-crafted JSON with an out-of-range status int (future enum value).
+        const std::string json_str = "[\"pre_burn\", 0, 99, 42]";
+        pp_sub_decision b = deserialize_sub_decision( json_str );
+        CHECK( b.st == pp_sub_decision::status::not_evaluated );
+        CHECK( b.seed == 42 );
+    }
+}
+
+TEST_CASE( "post_process_resolved_generator_roundtrip", "[mapgen][post_process]" )
+{
+    pp_resolved_generator a;
+    a.generator = pp_generator_test_pp_riot;
+    pp_sub_decision d1;
+    d1.type = sub_generator_type::pre_burn;
+    d1.ordinal = 0;
+    d1.st = pp_sub_decision::status::applied;
+    d1.seed = 1111;
+    a.sub_decisions.push_back( d1 );
+    pp_sub_decision d2;
+    d2.type = sub_generator_type::aftershock_ruin;
+    d2.ordinal = 0;
+    d2.st = pp_sub_decision::status::skipped;
+    d2.seed = 2222;
+    a.sub_decisions.push_back( d2 );
+
+    std::ostringstream os;
+    JsonOut jsout( os );
+    a.serialize( jsout );
+    pp_resolved_generator b;
+    JsonValue jv = json_loader::from_string( os.str() );
+    b.deserialize( jv );
+
+    CHECK( b.generator == a.generator );
+    REQUIRE( b.sub_decisions.size() == a.sub_decisions.size() );
+    for( size_t i = 0; i < a.sub_decisions.size(); i++ ) {
+        CHECK( b.sub_decisions[i].type == a.sub_decisions[i].type );
+        CHECK( b.sub_decisions[i].ordinal == a.sub_decisions[i].ordinal );
+        CHECK( b.sub_decisions[i].st == a.sub_decisions[i].st );
+        CHECK( b.sub_decisions[i].seed == a.sub_decisions[i].seed );
+    }
+}
+
+TEST_CASE( "post_process_resolved_generator_empty_sub_decisions", "[mapgen][post_process]" )
+{
+    pp_resolved_generator a;
+    a.generator = pp_generator_test_pp_riot;
+    // sub_decisions intentionally empty
+
+    std::ostringstream os;
+    JsonOut jsout( os );
+    a.serialize( jsout );
+    pp_resolved_generator b;
+    JsonValue jv = json_loader::from_string( os.str() );
+    b.deserialize( jv );
+
+    CHECK( b.generator == a.generator );
+    CHECK( b.sub_decisions.empty() );
+}
+
+// execute() with decisions=nullptr must fall back to the gated probability roll,
+// not silently noop or unconditionally apply.
+TEST_CASE( "post_process_null_decisions_falls_back_to_fresh_roll", "[mapgen][post_process]" )
+{
+    clear_overmaps();
+    clear_map();
+    clear_avatar();
+    map &here = get_map();
+    const tripoint_abs_omt pos = project_to<coords::omt>( here.get_abs_sub() );
+
+    calendar::turn = calendar::start_of_cataclysm + 14_days;
+
+    bool found = false;
+    for( unsigned int seed = 100; seed < 200; seed++ ) {
+        build_pp_test_layout( here, 0, false );
+        rng_set_engine_seed( seed );
+        pp_generator_riot_damage.obj().execute( here, pos, nullptr );
+        pp_scan_result r = scan_omt( here, 0 );
+        if( r.wall_burnt_count > 0 ) {
+            found = true;
+            break;
+        }
+    }
+    CHECK( found );
+
+    clear_overmaps();
+}
+
+// skipped pre_burn must be per-type: no burn here, but sibling sub-generators
+// (blood, bash, fire) in the same generator must still run.
+TEST_CASE( "post_process_pre_burn_skipped_is_noop_and_preserves_others",
+           "[mapgen][post_process]" )
+{
+    clear_overmaps();
+    clear_map();
+    clear_avatar();
+    map &here = get_map();
+    const tripoint_abs_omt pos = project_to<coords::omt>( here.get_abs_sub() );
+
+    calendar::turn = calendar::start_of_cataclysm + 14_days;
+
+    build_pp_test_layout( here, 0, false );
+    rng_set_engine_seed( 4242 );
+
+    // Construct a decision vector marking pre_burn as skipped.
+    std::vector<pp_sub_decision> decisions;
+    pp_sub_decision dec;
+    dec.type = sub_generator_type::pre_burn;
+    dec.ordinal = 0;
+    dec.st = pp_sub_decision::status::skipped;
+    dec.seed = 0;
+    decisions.push_back( dec );
+
+    pp_generator_riot_damage.obj().execute( here, pos, &decisions );
+    pp_scan_result r = scan_omt( here, 0 );
+
+    // Skipped pre_burn: no burnt terrain, no dirt from outdoor burn.
+    CHECK( r.wall_burnt_count == 0 );
+    CHECK( r.floor_burnt_count == 0 );
+    CHECK( r.dirt_count == 0 );
+    // Other sub-generators still run: blood proves they did.
+    CHECK( r.blood_field_count > 0 );
+
+    clear_overmaps();
+}
+
+// Guard: an applied overmap_special-scope pre_burn decision always burns,
+// regardless of time gate.
+TEST_CASE( "post_process_pre_burn_applied_runs_unconditionally",
+           "[mapgen][post_process]" )
+{
+    clear_overmaps();
+    clear_map();
+    clear_avatar();
+    map &here = get_map();
+    const tripoint_abs_omt pos = project_to<coords::omt>( here.get_abs_sub() );
+
+    // Before scaling_days_start: normal path would skip pre_burn entirely.
+    // Applied decision should still burn.
+    calendar::turn = calendar::start_of_cataclysm + 0_turns;
+
+    build_pp_test_layout( here, 0, false );
+    rng_set_engine_seed( 4242 );
+
+    std::vector<pp_sub_decision> decisions;
+    pp_sub_decision dec;
+    dec.type = sub_generator_type::pre_burn;
+    dec.ordinal = 0;
+    dec.st = pp_sub_decision::status::applied;
+    dec.seed = 0;
+    decisions.push_back( dec );
+
+    pp_generator_riot_damage.obj().execute( here, pos, &decisions );
+    pp_scan_result r = scan_omt( here, 0 );
+
+    // Applied: wood walls -> burnt, wood floor -> burnt.
+    CHECK( r.wall_burnt_count > 0 );
+    CHECK( r.floor_burnt_count > 0 );
+
+    clear_overmaps();
+}
+
+// All OMTs of a multi-z special must index to the same decision slot so the
+// first-to-mapgen OMT resolves the decision for every other z-level.
+TEST_CASE( "post_process_multi_z_special_shares_decisions", "[mapgen][post_process]" )
+{
+    const overmap_special &special = *overmap_special_test_pp_multi_z_special;
+    const city cit;
+
+    // Fresh overmap off the global grid keeps the test isolated from real state.
+    std::unique_ptr<overmap> om = std::make_unique<overmap>( point_abs_om::zero );
+
+    std::vector<tripoint_om_omt> placed;
+    for( int trial = 0; trial < 2000 && placed.empty(); trial++ ) {
+        tripoint_om_omt try_pos( rng( 1, OMAPX - 2 ), rng( 1, OMAPY - 2 ), 0 );
+        const om_direction::type dir = om_direction::type::north;
+        if( om->can_place_special( special, try_pos, dir, false ) ) {
+            placed = om->place_special( special, try_pos, dir, cit, false, false );
+        }
+    }
+    REQUIRE_FALSE( placed.empty() );
+    REQUIRE( placed.size() == 2 );
+
+    tripoint_om_omt z0_omt;
+    tripoint_om_omt z1_omt;
+    bool found_z0 = false;
+    bool found_z1 = false;
+    for( const tripoint_om_omt &p : placed ) {
+        if( p.z() == 0 ) {
+            z0_omt = p;
+            found_z0 = true;
+        } else if( p.z() == 1 ) {
+            z1_omt = p;
+            found_z1 = true;
+        }
+    }
+    REQUIRE( found_z0 );
+    REQUIRE( found_z1 );
+
+    CHECK_FALSE( om->ter( z0_omt )->get_post_process_generators().empty() );
+    CHECK_FALSE( om->ter( z1_omt )->get_post_process_generators().empty() );
+
+    std::vector<pp_resolved_generator> *z0_decisions = om->pp_decisions( z0_omt );
+    std::vector<pp_resolved_generator> *z1_decisions = om->pp_decisions( z1_omt );
+    REQUIRE( z0_decisions != nullptr );
+    REQUIRE( z1_decisions != nullptr );
+    CHECK( z0_decisions == z1_decisions );
+
+    bool found_riot = false;
+    bool found_pre_burn = false;
+    for( const pp_resolved_generator &rg : *z0_decisions ) {
+        if( rg.generator == pp_generator_test_pp_riot ) {
+            found_riot = true;
+            for( const pp_sub_decision &dec : rg.sub_decisions ) {
+                if( dec.type == sub_generator_type::pre_burn ) {
+                    found_pre_burn = true;
+                    CHECK( dec.ordinal == 0 );
+                    CHECK( dec.st == pp_sub_decision::status::not_evaluated );
+                }
+            }
+        }
+    }
+    CHECK( found_riot );
+    CHECK( found_pre_burn );
+}
+
 

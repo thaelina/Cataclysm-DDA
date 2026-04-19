@@ -445,6 +445,44 @@ Each sub-generator object has the following fields:
 | `max_intensity`       | Maximum intensity for the effect.  Default 0.                                         |
 | `scaling_days_start`  | For time-scaled effects, day offset when scaling begins.  Default 0.                  |
 | `scaling_days_end`    | For time-scaled effects, day offset when scaling reaches full strength.  Default 0.   |
+| `scope`               | `"omt"` (default) or `"overmap_special"`.  See [Scope](#scope) below.                 |
+
+### Scope
+
+Controls when a sub-generator's apply/skip decision is made, and whether it
+is shared across OMTs of the same `overmap_special`.
+
+| Value             | Behavior |
+| ----------------- | -------- |
+| `omt` (default)   | Decision rolled fresh at each OMT's mapgen.  Not persisted.  This is the original per-OMT behavior. |
+| `overmap_special` | Decision rolled once for the whole `overmap_special`, shared across every OMT it occupies.  Resolved lazily when the first OMT reaches mapgen.  Result is persisted on the overmap and survives save/load. |
+
+`overmap_special` scope is how a multi-OMT or multi-z-level building gets a
+single consistent burn decision instead of independent rolls per floor.
+
+#### Supported combinations
+
+Only `pre_burn` and `aftershock_ruin` support `overmap_special` scope.  Other
+sub-generator types operate per-tile, where a shared all-or-nothing decision
+would make the entire special either all-damaged or all-untouched.
+
+For `pre_burn`, `attempts` must be `<= 1` when scope is `overmap_special`.  A
+single shared bool cannot represent "at least one of N attempts succeeded".
+
+At most one sub-generator of a given `type` may use `overmap_special` scope in
+a given `pp_generator`.  If any entry of a type uses `overmap_special`, it must
+be the only entry of that type in the generator.  This keeps persisted
+decisions stably matched by `(type, ordinal)` across JSON edits.
+
+Mapping of `applied` / `skipped` status is per type:
+
+| Type              | `applied` | `skipped` |
+| ----------------- | --------- | --------- |
+| `pre_burn`        | Burn the building. | Building is untouched (no-op).  Other sub-generators in the same `pp_generator` still run. |
+| `aftershock_ruin` | Fully ruined path. | Smashed-up path.  Never a no-op. |
+
+Old saves predating this feature have no persisted decisions.  Loading them
+falls through to the original per-OMT fresh-roll behavior.  No migration needed.
 
 ### Sub-generator types
 
@@ -461,7 +499,7 @@ Each sub-generator object has the following fields:
 
 | Id                   | Description | Used by |
 | -------------------- | ----------- | ------- |
-| `riot_damage`        | Full riot damage: bash, item displacement, fire, pre-burn, and blood.  | Most city buildings (via `generic_city_building`). |
+| `riot_damage`        | Full riot damage: bash, item displacement, fire, pre-burn, and blood.  `pre_burn` uses `overmap_special` scope.  | Most city buildings (via `generic_city_building`). |
 | `riot_damage_road`   | Same as `riot_damage` but without `pre_burn`.  | City roads (hardcoded dispatch). |
 | `aftershock_ruin`    | Aftershock ruin effect.  | Aftershock mod buildings with `PP_GENERATE_RUINED` flag. |
 

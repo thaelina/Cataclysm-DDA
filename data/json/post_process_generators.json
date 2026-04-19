@@ -9,6 +9,7 @@
       { "type": "add_fire", "attempts": 2, "min_intensity": 1, "max_intensity": 3, "scaling_days_end": 14 },
       {
         "type": "pre_burn",
+        "scope": "overmap_special",
         "attempts": 1,
         "min_intensity": 6,
         "max_intensity": 28,
