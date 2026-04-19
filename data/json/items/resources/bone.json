@@ -54,6 +54,7 @@
     "name": { "str": "tainted bone" },
     "description": "A rotten, brittle bone from some unnatural creature or other.  Could be used to make some stuff, like charcoal or glue.  You could eat it, but it will poison you.",
     "copy-from": "bone",
+    "material": [ "tainted_bone" ],
     "color": "light_gray",
     "use_action": [ "POISON" ],
     "price_postapoc": "5 cent",
