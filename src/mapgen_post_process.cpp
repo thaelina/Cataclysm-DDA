@@ -570,7 +570,23 @@ static void apply_pre_burn_tiles( map &md,
 
         if( !md.has_flag_ter( ter_furn_flag::TFLAG_SWIMMABLE, current_tile ) &&
             !md.has_flag_ter( ter_furn_flag::TFLAG_LIQUID, current_tile ) ) {
-            md.i_clear( current_tile.xy() );
+            // Mirrors seed preservation in execute_move_items.
+            const bool preserve_seed =
+                md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_SEALED, current_tile ) &&
+                md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_CONTAINER, current_tile ) &&
+                md.has_flag_ter_or_furn( ter_furn_flag::TFLAG_PLANT, current_tile );
+            if( preserve_seed ) {
+                map_stack items = md.i_at( current_tile.xy() );
+                for( auto it = items.begin(); it != items.end(); ) {
+                    if( it->is_seed() ) {
+                        ++it;
+                    } else {
+                        it = items.erase( it );
+                    }
+                }
+            } else {
+                md.i_clear( current_tile.xy() );
+            }
         }
     }
 }
