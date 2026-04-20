@@ -606,7 +606,7 @@ void tileset_cache::loader::load_tileset( const cata_path &img_path, const bool 
 
     if( R >= 0 && R <= 255 && G >= 0 && G <= 255 && B >= 0 && B <= 255 ) {
         const Uint32 key = MapRGB( tile_atlas, 0, 0, 0 );
-        throwErrorIf( SetColorKey( tile_atlas, SDL_TRUE, key ) != 0,
+        throwErrorIf( SetColorKey( tile_atlas, 1, key ) != 0,
                       "SDL_SetColorKey failed" );
         throwErrorIf( SetSurfaceRLE( tile_atlas, 1 ), "SDL_SetSurfaceRLE failed" );
     }
@@ -2061,7 +2061,7 @@ void cata_tiles::draw( const point &dest, const tripoint_bub_ms &center, int wid
                                     rec.destination.h
                                 };
                                 sil->render_copy_ex( renderer, &mask_dest, rec.angle, nullptr,
-                                                     static_cast<SDL_RendererFlip>( rec.flip ) );
+                                                     static_cast<CataFlipMode>( rec.flip ) );
                             }
                         }
 
@@ -3482,7 +3482,7 @@ bool cata_tiles::draw_sprite_at(
     // and for recording into tint_sprites (which replays the sprite as a white
     // silhouette during the tint overlay pass). Compute them once here.
     double render_angle = 0;
-    SDL_RendererFlip render_flip = SDL_FLIP_NONE;
+    CataFlipMode render_flip = SDL_FLIP_NONE;
     if( rotate_sprite ) {
         if( rota == -1 ) {
             render_flip = SDL_FLIP_HORIZONTAL;
@@ -3492,7 +3492,7 @@ bool cata_tiles::draw_sprite_at(
                     render_angle = -90;
                     break;
                 case 2:
-                    render_flip = static_cast<SDL_RendererFlip>( SDL_FLIP_HORIZONTAL | SDL_FLIP_VERTICAL );
+                    render_flip = static_cast<CataFlipMode>( SDL_FLIP_HORIZONTAL | SDL_FLIP_VERTICAL );
                     break;
                 case 3:
                     render_angle = 90;
@@ -3517,7 +3517,7 @@ bool cata_tiles::draw_sprite_at(
             // flip horizontally
             ret = sprite_tex->render_copy_ex(
                       renderer, &destination, 0, nullptr,
-                      static_cast<SDL_RendererFlip>( SDL_FLIP_HORIZONTAL ) );
+                      static_cast<CataFlipMode>( SDL_FLIP_HORIZONTAL ) );
         } else {
             switch( rota % 4 ) {
                 default:
@@ -3550,7 +3550,7 @@ bool cata_tiles::draw_sprite_at(
                         // never flip isometric tiles vertically
                         ret = sprite_tex->render_copy_ex(
                                   renderer, &destination, 0, nullptr,
-                                  static_cast<SDL_RendererFlip>( SDL_FLIP_HORIZONTAL | SDL_FLIP_VERTICAL ) );
+                                  static_cast<CataFlipMode>( SDL_FLIP_HORIZONTAL | SDL_FLIP_VERTICAL ) );
                     } else {
                         ret = sprite_tex->render_copy_ex( renderer, &destination, 0, nullptr,
                                                           SDL_FLIP_NONE );
