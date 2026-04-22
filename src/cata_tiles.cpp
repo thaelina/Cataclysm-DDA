@@ -1860,7 +1860,13 @@ void cata_tiles::draw( const point &dest, const tripoint_bub_ms &center, int wid
         // For each row
         const bool iso = is_isometric();
         const level_cache &zlev_cache = here.access_cache( cur_zlevel );
-        const bool zlev_has_color = zlev_cache.has_colored_lights;
+        // FIXME: colored light tint overlay disabled in isometric mode pending
+        // a non-silhouette implementation. The hybrid mask path requires render
+        // target switches that stall the GPU pipeline, and the simple diamond
+        // path alone does not justify the per-sprite bounds tracking overhead
+        // in the layer loop. Revisit when SDL_gpu or a shader-based tint path
+        // is available.
+        const bool zlev_has_color = zlev_cache.has_colored_lights && !iso;
         for( int row = cur_any_tile_range.p_min.y; row < cur_any_tile_range.p_max.y; row ++ ) {
             // --- Per-tile prepass ---
             // Initialize base height and decide which tiles need a colored light
