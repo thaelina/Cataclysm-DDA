@@ -14008,6 +14008,15 @@ void zone_sort_activity_actor::stage_do( player_activity &act, Character &you )
                 }
             }
         }
+        // Drop count-full destinations so pickup does not bounce.
+        for( auto dit = dest_set.begin(); dit != dest_set.end(); ) {
+            if( zt_id != zone_type_id::NULL_ID() &&
+                !zone_sorting::dest_has_capacity( *dit, zt_id, thisitem, fac_id ) ) {
+                dit = dest_set.erase( dit );
+            } else {
+                ++dit;
+            }
+        }
 
         std::optional<bool> move_and_reset = zone_sorting::unload_item( you, src,
                                              zone_unload_options, it->second ? vp : std::nullopt, it->first, dest_set, num_processed );
