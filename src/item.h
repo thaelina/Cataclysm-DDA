@@ -22,6 +22,7 @@
 #include "coordinates.h"
 #include "craft_command.h"
 #include "enums.h"
+#include "flat_set.h"
 #include "global_vars.h"
 #include "gun_mode.h"
 #include "io_tags.h"
@@ -198,7 +199,7 @@ struct stacking_info {
 class item : public visitable
 {
     public:
-        using FlagsSetType = std::set<flag_id>;
+        using FlagsSetType = cata::flat_set<flag_id>;
 
         item();
 

@@ -53,6 +53,7 @@
 #include "field.h"
 #include "field_type.h"
 #include "flag.h"
+#include "flat_set.h" // IWYU pragma: keep
 #include "flexbuffer_json.h"
 #include "fungal_effects.h"
 #include "game.h"
@@ -2043,7 +2044,7 @@ class exosuit_interact
             if( !pkt->get_pocket_data()->pocket_name.empty() ) {
                 return pkt->get_pocket_data()->pocket_name.translated();
             }
-            const std::set<flag_id> flags = pkt->get_pocket_data()->get_flag_restrictions();
+            const pocket_data::FlagsSetType &flags = pkt->get_pocket_data()->get_flag_restrictions();
             return enumerate_as_string( flags, []( const flag_id & fid ) {
                 if( fid->name().empty() ) {
                     return fid.str();
@@ -2185,7 +2186,7 @@ class exosuit_interact
         int insert_replace_activate_mod( item_pocket *pkt, item *it ) {
             Character &c = get_player_character();
             map &here = get_map();
-            const std::set<flag_id> flags = pkt->get_pocket_data()->get_flag_restrictions();
+            const pocket_data::FlagsSetType &flags = pkt->get_pocket_data()->get_flag_restrictions();
             if( flags.empty() ) {
                 //~ Modular exoskeletons require pocket restrictions to insert modules. %s = pocket name.
                 popup( _( "%s doesn't define any restrictions for modules!" ), get_pocket_name( pkt ) );
