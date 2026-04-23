@@ -232,7 +232,12 @@
       "PORTABLE_GAME",
       "E_FILE_DEVICE",
       "EBOOKSAVE",
-      { "type": "mp3", "transform": "afs_atomic_smartphone", "message": "The phone turns off.", "activate": false }
+      {
+        "type": "mp3",
+        "transform": "afs_atomic_smartphone",
+        "message": "You stop listening to music and take your earbuds out.",
+        "activate": false
+      }
     ],
     "tick_action": [ "MP3_ON" ],
     "extend": { "flags": [ "TRADER_AVOID", "SPAWN_ACTIVE" ] }
@@ -306,7 +311,12 @@
       "PORTABLE_GAME",
       "E_FILE_DEVICE",
       "EBOOKSAVE",
-      { "type": "mp3", "transform": "afs_wraitheon_smartphone", "message": "The phone turns off.", "activate": false }
+      {
+        "type": "mp3",
+        "transform": "afs_wraitheon_smartphone",
+        "message": "You stop listening to music and take your earbuds out.",
+        "activate": false
+      }
     ],
     "extend": { "flags": [ "TRADER_AVOID", "SPAWN_ACTIVE" ] },
     "tick_action": [ "MP3_ON" ]
@@ -574,7 +584,7 @@
     "revert_to": "control_laptop",
     "use_action": {
       "target": "control_laptop",
-      "msg": "You stop lighting up the screen.",
+      "msg": "You turn off the screen.",
       "ammo_scale": 0,
       "menu_text": "Turn off",
       "type": "transform"
@@ -1049,7 +1059,7 @@
     "color": "light_green",
     "use_action": {
       "target": "afs_atomic_light_off",
-      "msg": "You close the nightlight's cover.",
+      "msg": "You close the lamp's cover.",
       "menu_text": "Close cover",
       "type": "transform"
     },
@@ -1064,12 +1074,7 @@
     "category": "tools",
     "name": { "str": "atomic reading light (covered)", "str_pl": "atomic reading lights (covered)" },
     "description": "A commercially produced reading light, with the gimmick of never having to replace batteries thanks to its nuclear decay powered power source.  Instead of having an on/off switch, there is instead a cover you close over it.",
-    "use_action": {
-      "target": "afs_atomic_light",
-      "msg": "You open the nightlight's cover.",
-      "menu_text": "Open cover",
-      "type": "transform"
-    },
+    "use_action": { "target": "afs_atomic_light", "msg": "You open the lamp's cover.", "menu_text": "Open cover", "type": "transform" },
     "flags": [ "LEAK_DAM", "RADIOACTIVE", "ALLOWS_REMOTE_USE" ]
   },
   {
