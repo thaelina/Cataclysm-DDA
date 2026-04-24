@@ -898,7 +898,7 @@ aim_mods_cache Character::gen_aim_mods_cache( const item &gun )const
 
 double Character::fastest_aiming_method_speed( const item &gun, double recoil,
         const Target_attributes &target_attributes,
-        const std::optional<std::reference_wrapper<const parallax_cache>> parallax_cache ) const
+        const parallax_cache &parallaxes ) const
 {
     // Get fastest aiming method that can be used to improve aim further below @ref recoil.
 
@@ -934,13 +934,7 @@ double Character::fastest_aiming_method_speed( const item &gun, double recoil,
     const float light_limit = 120.0f;
     bool laser_light_available = target_attributes.range <= ( base_distance + get_per() ) * std::max(
                                      1.0f - target_attributes.light / light_limit, 0.0f ) && target_attributes.visible;
-    // There are only two kinds of parallaxes, one with zoom and one without. So cache them.
-    std::vector<std::optional<int>> parallaxes;
-    parallaxes.resize( 2 );
-    if( parallax_cache.has_value() ) {
-        parallaxes[0].emplace( parallax_cache.value().get().parallax_without_zoom );
-        parallaxes[1].emplace( parallax_cache.value().get().parallax_with_zoom );
-    }
+
     for( const item *e : gun.gunmods() ) {
         const islot_gunmod &mod = *e->type->gunmod;
         if( mod.sight_dispersion < 0 || mod.field_of_view <= 0 ) {
@@ -949,12 +943,11 @@ double Character::fastest_aiming_method_speed( const item &gun, double recoil,
         if( e->has_flag( flag_LASER_SIGHT ) && !laser_light_available ) {
             continue;
         }
-        bool zoom = e->has_flag( flag_ZOOM );
-        // zoom==true will access parallaxes[1], zoom==false will access parallaxes[0].
-        int parallax = parallaxes[static_cast<int>( zoom )].has_value() ? parallaxes[static_cast<int>
-                       ( zoom )].value() : get_character_parallax( zoom );
-        parallaxes[static_cast<int>( zoom )].emplace( parallax );
-        // Maunal expansion of effective_dispersion() for performance.
+
+        int parallax = e->has_flag( flag_ZOOM ) ? parallaxes.parallax_with_zoom :
+                       parallaxes.parallax_without_zoom;
+
+        // Manual expansion of effective_dispersion() for performance.
         double e_effective_dispersion = parallax + mod.sight_dispersion;
 
         // The character can hardly get the aiming speed bonus from a non-magnifier sight when aiming at a target that is too far or too small
@@ -1056,7 +1049,7 @@ double Character::aim_per_move( const item &gun, double recoil,
         return 0.0;
     }
     const double sight_speed_modifier = fastest_aiming_method_speed( gun, recoil, target_attributes,
-                                        std::make_optional( std::ref( aim_cache.parallaxes ) ) );
+                                        aim_cache.parallaxes );
     const int limit = aim_cache.limit;
     if( sight_speed_modifier == INT_MIN ) {
         // No suitable sights (already at maximum aim).
