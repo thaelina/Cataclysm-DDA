@@ -3545,7 +3545,7 @@ void npc::aim( const Target_attributes &target_attributes )
         moves--;
         recoil -= aim_amount;
         recoil = std::max( 0.0, recoil );
-        aim_amount = aim_per_move( *weapon, recoil, target_attributes, { std::ref( aim_cache ) } );
+        aim_amount = aim_per_move( *weapon, recoil, target_attributes, aim_cache );
     }
     add_msg_debug( debugmode::debug_filter::DF_NPC_COMBATAI,
                    "%s reduced recoil from %f to %f in %d moves",
