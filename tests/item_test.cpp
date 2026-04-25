@@ -19,6 +19,7 @@
 #include "cata_catch.h"
 #include "character_attire.h"
 #include "coordinates.h"
+#include "enum_bitset.h"
 #include "enums.h"
 #include "flag.h"
 #include "game.h"
@@ -26,6 +27,7 @@
 #include "item_category.h"
 #include "item_factory.h"
 #include "item_location.h"
+#include "item_tname.h"
 #include "itype.h"
 #include "material.h"
 #include "math_defines.h"
@@ -72,6 +74,7 @@ static const itype_id itype_chem_black_powder( "chem_black_powder" );
 static const itype_id itype_chem_muriatic_acid( "chem_muriatic_acid" );
 static const itype_id itype_detergent( "detergent" );
 static const itype_id itype_duffelbag( "duffelbag" );
+static const itype_id itype_efile_photos( "efile_photos" );
 static const itype_id itype_hammer( "hammer" );
 static const itype_id itype_hat_hard( "hat_hard" );
 static const itype_id itype_jeans( "jeans" );
@@ -379,6 +382,81 @@ TEST_CASE( "item_variables_round-trip_accurately", "[item]" )
     CHECK( i.get_var( "B", 0.0 ) == 0.125 );
     i.set_var( "C", tripoint_abs_ms( 2, 3, 4 ) );
     CHECK( i.get_var( "C", tripoint_abs_ms::zero ) == tripoint_abs_ms( 2, 3, 4 ) );
+}
+
+static item make_photo_gallery( int n_photos )
+{
+    item gallery( itype_efile_photos );
+    std::vector<item::extended_photo_def> photos;
+    photos.reserve( n_photos );
+    for( int i = 0; i < n_photos; ++i ) {
+        item::extended_photo_def photo;
+        photo.quality = 3;
+        photo.name = string_format( "test_photo_%d", i );
+        photo.description = "A test photo for stacking comparison.";
+        photos.push_back( photo );
+    }
+    gallery.write_extended_photos( photos, "CAMERA_EXTENDED_PHOTOS" );
+    return gallery;
+}
+
+TEST_CASE( "efile_photos_total_photos_count_cache", "[item][estorage]" )
+{
+    SECTION( "fresh write caches the count" ) {
+        item gallery = make_photo_gallery( 5 );
+        CHECK( gallery.has_var( "CAMERA_EXTENDED_PHOTOS_count" ) );
+        CHECK( gallery.get_var( "CAMERA_EXTENDED_PHOTOS_count", 0 ) == 5 );
+        CHECK( gallery.total_photos() == 5 );
+    }
+
+    SECTION( "legacy save without cache var lazy-fills on first call" ) {
+        item gallery = make_photo_gallery( 7 );
+        gallery.erase_var( "CAMERA_EXTENDED_PHOTOS_count" );
+        REQUIRE_FALSE( gallery.has_var( "CAMERA_EXTENDED_PHOTOS_count" ) );
+        CHECK( gallery.total_photos() == 7 );
+        CHECK( gallery.has_var( "CAMERA_EXTENDED_PHOTOS_count" ) );
+        CHECK( gallery.get_var( "CAMERA_EXTENDED_PHOTOS_count", 0 ) == 7 );
+    }
+
+    SECTION( "two galleries with same photos stack" ) {
+        item a = make_photo_gallery( 3 );
+        item b = make_photo_gallery( 3 );
+        stacking_info info = a.stacks_with( b );
+        CHECK( static_cast<bool>( info ) );
+        CHECK( info.bits[tname::segments::EMEMORY] );
+    }
+
+    SECTION( "mixed cache state still stacks" ) {
+        // Cache key is derived; VARS must ignore it or lazy-fill desyncs split stacks.
+        item a = make_photo_gallery( 4 );
+        item b = make_photo_gallery( 4 );
+        b.erase_var( "CAMERA_EXTENDED_PHOTOS_count" );
+        REQUIRE( a.has_var( "CAMERA_EXTENDED_PHOTOS_count" ) );
+        REQUIRE_FALSE( b.has_var( "CAMERA_EXTENDED_PHOTOS_count" ) );
+        stacking_info info = a.stacks_with( b );
+        CHECK( static_cast<bool>( info ) );
+        CHECK( info.bits[tname::segments::VARS] );
+    }
+
+    SECTION( "differing photo counts do not stack" ) {
+        item a = make_photo_gallery( 3 );
+        item b = make_photo_gallery( 5 );
+        REQUIRE( a.total_photos() != b.total_photos() );
+        stacking_info info = a.stacks_with( b );
+        CHECK_FALSE( static_cast<bool>( info ) );
+        CHECK_FALSE( info.bits[tname::segments::VARS] );
+    }
+
+    SECTION( "containers with differing nested galleries report EMEMORY mismatch" ) {
+        // EMEMORY bit drives aggregated free-mem display, must reflect real mismatch.
+        item a( itype_usb_drive );
+        item b( itype_usb_drive );
+        REQUIRE( a.put_in( make_photo_gallery( 3 ), pocket_type::E_FILE_STORAGE ).success() );
+        REQUIRE( b.put_in( make_photo_gallery( 5 ), pocket_type::E_FILE_STORAGE ).success() );
+        stacking_info info = a.stacks_with( b );
+        CHECK_FALSE( static_cast<bool>( info ) );
+        CHECK_FALSE( info.bits[tname::segments::EMEMORY] );
+    }
 }
 
 TEST_CASE( "water_affect_items_while_swimming_check", "[item][water][swimming]" )
