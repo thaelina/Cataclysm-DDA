@@ -101,6 +101,8 @@ static const efftype_id effect_weed_high( "weed_high" );
 
 static const fault_id fault_emp_reboot( "fault_emp_reboot" );
 
+static const flag_id json_flag_LOCATION_PRECISE_CLOSEST_CITY( "LOCATION_PRECISE_CLOSEST_CITY" );
+
 static const furn_str_id furn_f_metal_smoking_rack_active( "f_metal_smoking_rack_active" );
 static const furn_str_id furn_f_smoking_rack_active( "f_smoking_rack_active" );
 static const furn_str_id furn_f_water_mill_active( "f_water_mill_active" );
@@ -681,6 +683,11 @@ bool _stacks_location_hint( item const &lhs, item const &rhs )
 
 bool _stacks_location_precise_closest_city( item const &lhs, item const &rhs )
 {
+    // Skip the closest_city sort unless both items can actually display the segment.
+    if( !lhs.has_flag( json_flag_LOCATION_PRECISE_CLOSEST_CITY ) ||
+        !rhs.has_flag( json_flag_LOCATION_PRECISE_CLOSEST_CITY ) ) {
+        return true;
+    }
     static const std::string omt_loc_var = "spawn_location";
     const tripoint_abs_ms this_loc( lhs.get_var( omt_loc_var, tripoint_abs_ms::invalid ) );
     const tripoint_abs_ms that_loc( rhs.get_var( omt_loc_var, tripoint_abs_ms::invalid ) );
