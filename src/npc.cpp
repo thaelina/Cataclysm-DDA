@@ -2691,12 +2691,9 @@ bool npc::is_walking_with() const
     return attitude == NPCATT_FOLLOW || attitude == NPCATT_LEAD || attitude == NPCATT_WAIT;
 }
 
-bool npc::should_follow_close() const
+bool npc::can_follow_player_now() const
 {
     if( !is_following() ) {
-        return false;
-    }
-    if( !rules.has_flag( ally_rule::follow_close ) ) {
         return false;
     }
     if( has_flag( json_flag_CANNOT_MOVE ) ) {
@@ -2710,6 +2707,11 @@ bool npc::should_follow_close() const
         return false;
     }
     return true;
+}
+
+int npc::desired_follow_radius() const
+{
+    return rules.has_flag( ally_rule::follow_close ) ? follow_distance() : 6;
 }
 
 bool npc::is_obeying( const Character &p ) const

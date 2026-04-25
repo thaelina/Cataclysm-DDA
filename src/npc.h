@@ -976,9 +976,10 @@ class npc : public Character
         bool is_leader() const;
         // Leading, following, or waiting for the player
         bool is_walking_with() const;
-        // Can actively close-follow right now: walking_with + follow_close
-        // rule + can move + no vehicle mismatch with player.
-        bool should_follow_close() const;
+        // FOLLOW/WAIT (not LEAD), mobile, vehicle-compatible with player.
+        bool can_follow_player_now() const;
+        // Spacing preference: follow_close on -> follow_distance(), off -> 6.
+        int desired_follow_radius() const;
         // In the same faction
         bool is_ally( const Character &p ) const override;
         // Is an ally of the player
