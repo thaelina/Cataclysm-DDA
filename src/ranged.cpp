@@ -1816,7 +1816,8 @@ static void mod_stamina_archery( Character &you, const item &relevant )
 static void do_aim( Character &you, const item &relevant, const Target_attributes &target,
                     const double min_recoil )
 {
-    const double aim_amount = you.aim_per_move( relevant, you.recoil, target );
+    const aim_mods_cache aim_cache = you.gen_aim_mods_cache( relevant );
+    const double aim_amount = you.aim_per_move( relevant, you.recoil, target, aim_cache );
     if( aim_amount > 0 && you.recoil > min_recoil ) {
         // Increase aim at the cost of moves
         you.mod_moves( -1 );

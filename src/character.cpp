@@ -1036,12 +1036,6 @@ double Character::aim_factor_from_length( const item &gun ) const
 }
 
 double Character::aim_per_move( const item &gun, double recoil,
-                                const Target_attributes &target_attributes ) const
-{
-    return aim_per_move( gun, recoil, target_attributes, gen_aim_mods_cache( gun ) );
-}
-
-double Character::aim_per_move( const item &gun, double recoil,
                                 const Target_attributes &target_attributes,
                                 const aim_mods_cache &aim_cache ) const
 {
