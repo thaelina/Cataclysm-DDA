@@ -22,6 +22,7 @@
 #include "coordinates.h"
 #include "craft_command.h"
 #include "enums.h"
+#include "flat_set.h"
 #include "global_vars.h"
 #include "gun_mode.h"
 #include "io_tags.h"
@@ -198,7 +199,7 @@ struct stacking_info {
 class item : public visitable
 {
     public:
-        using FlagsSetType = std::set<flag_id>;
+        using FlagsSetType = cata::flat_set<flag_id>;
 
         item();
 
@@ -1023,10 +1024,12 @@ class item : public visitable
         int insert_cost( const item &it ) const;
 
         /**
-         * Puts the given item into this one.
+         * Puts the given item into this one. When @p quiet is true, failure
+         * returns silently instead of triggering a debugmsg.
          */
         ret_val<void> put_in( const item &payload, pocket_type pk_type,
-                              bool unseal_pockets = false, Character *carrier = nullptr );
+                              bool unseal_pockets = false, Character *carrier = nullptr,
+                              bool quiet = false );
         void force_insert_item( const item &it, pocket_type pk_type );
 
         /**
