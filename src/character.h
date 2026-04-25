@@ -801,7 +801,7 @@ class Character : public Creature, public visitable
         * Use a struct to avoid repeatedly calculate some modifiers that are actually persistent for aiming UI drawing.
         */
         double aim_per_move( const item &gun, double recoil,
-                             const Target_attributes &target_attributes = Target_attributes() ) const;
+                             const Target_attributes &target_attributes ) const;
         double aim_per_move( const item &gun, double recoil,
                              const Target_attributes &target_attributes,
                              const aim_mods_cache &aim_cache ) const;
