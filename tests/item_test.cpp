@@ -75,6 +75,7 @@ static const itype_id itype_chem_muriatic_acid( "chem_muriatic_acid" );
 static const itype_id itype_detergent( "detergent" );
 static const itype_id itype_duffelbag( "duffelbag" );
 static const itype_id itype_efile_photos( "efile_photos" );
+static const itype_id itype_efile_recipes( "efile_recipes" );
 static const itype_id itype_hammer( "hammer" );
 static const itype_id itype_hat_hard( "hat_hard" );
 static const itype_id itype_jeans( "jeans" );
@@ -106,6 +107,10 @@ static const itype_id itype_wrapper( "wrapper" );
 static const json_character_flag json_flag_DEAF( "DEAF" );
 
 static const mod_id MOD_INFORMATION_test_data( "test_data" );
+
+static const recipe_id recipe_2byarm_guard( "2byarm_guard" );
+static const recipe_id recipe_armguard_chitin( "armguard_chitin" );
+static const recipe_id recipe_balclava( "balclava" );
 
 TEST_CASE( "item_volume", "[item]" )
 {
@@ -456,6 +461,74 @@ TEST_CASE( "efile_photos_total_photos_count_cache", "[item][estorage]" )
         stacking_info info = a.stacks_with( b );
         CHECK_FALSE( static_cast<bool>( info ) );
         CHECK_FALSE( info.bits[tname::segments::EMEMORY] );
+    }
+}
+
+static item make_recipe_book( const std::set<recipe_id> &recipes )
+{
+    item book( itype_efile_recipes );
+    book.set_saved_recipes( recipes );
+    return book;
+}
+
+TEST_CASE( "efile_recipes_count_cache", "[item][estorage]" )
+{
+    const std::set<recipe_id> two = { recipe_balclava, recipe_2byarm_guard };
+    const std::set<recipe_id> three = { recipe_balclava, recipe_2byarm_guard, recipe_armguard_chitin };
+
+    SECTION( "set_saved_recipes caches the count" ) {
+        item book = make_recipe_book( two );
+        CHECK( book.has_var( "EIPC_RECIPES_count" ) );
+        CHECK( book.get_var( "EIPC_RECIPES_count", 0 ) == 2 );
+    }
+
+    SECTION( "legacy save without cache var lazy-fills via ememory_size" ) {
+        item book = make_recipe_book( three );
+        book.erase_var( "EIPC_RECIPES_count" );
+        REQUIRE_FALSE( book.has_var( "EIPC_RECIPES_count" ) );
+        const bool nonzero = book.ememory_size().value() > 0;
+        REQUIRE( nonzero );
+        CHECK( book.has_var( "EIPC_RECIPES_count" ) );
+        CHECK( book.get_var( "EIPC_RECIPES_count", 0 ) == 3 );
+    }
+
+    SECTION( "broken e-file reports zero ememory_size" ) {
+        item book = make_recipe_book( two );
+        book.set_flag( flag_ITEM_BROKEN );
+        REQUIRE( book.is_broken_on_active() );
+        CHECK( book.ememory_size().value() == 0 );
+    }
+
+    SECTION( "lazy fill deduplicates malformed CSV" ) {
+        item book( itype_efile_recipes );
+        book.set_var( "EIPC_RECIPES", std::string( ",balclava,balclava," ) );
+        REQUIRE_FALSE( book.has_var( "EIPC_RECIPES_count" ) );
+        const bool nonzero = book.ememory_size().value() > 0;
+        REQUIRE( nonzero );
+        CHECK( book.get_var( "EIPC_RECIPES_count", 0 ) == 1 );
+    }
+
+    SECTION( "set_saved_recipes while broken caches steady-state count" ) {
+        item book( itype_efile_recipes );
+        book.set_flag( flag_ITEM_BROKEN );
+        REQUIRE( book.is_broken_on_active() );
+        book.set_saved_recipes( two );
+        CHECK( book.get_var( "EIPC_RECIPES_count", 0 ) == 2 );
+        book.unset_flag( flag_ITEM_BROKEN );
+        REQUIRE_FALSE( book.is_broken_on_active() );
+        const bool nonzero = book.ememory_size().value() > 0;
+        CHECK( nonzero );
+    }
+
+    SECTION( "mixed cache state still stacks" ) {
+        item a = make_recipe_book( two );
+        item b = make_recipe_book( two );
+        b.erase_var( "EIPC_RECIPES_count" );
+        REQUIRE( a.has_var( "EIPC_RECIPES_count" ) );
+        REQUIRE_FALSE( b.has_var( "EIPC_RECIPES_count" ) );
+        stacking_info info = a.stacks_with( b );
+        CHECK( static_cast<bool>( info ) );
+        CHECK( info.bits[tname::segments::VARS] );
     }
 }
 
