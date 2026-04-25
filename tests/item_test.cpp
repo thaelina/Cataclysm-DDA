@@ -462,6 +462,35 @@ TEST_CASE( "efile_photos_total_photos_count_cache", "[item][estorage]" )
         CHECK_FALSE( static_cast<bool>( info ) );
         CHECK_FALSE( info.bits[tname::segments::EMEMORY] );
     }
+
+    SECTION( "occupied_ememory sums every top-level efile" ) {
+        item drive( itype_usb_drive );
+        const item g1 = make_photo_gallery( 2 );
+        const item g2 = make_photo_gallery( 5 );
+        const units::ememory expected = g1.ememory_size() + g2.ememory_size();
+        REQUIRE( drive.put_in( g1, pocket_type::E_FILE_STORAGE ).success() );
+        REQUIRE( drive.put_in( g2, pocket_type::E_FILE_STORAGE ).success() );
+        const bool sum_matches = drive.occupied_ememory() == expected;
+        CHECK( sum_matches );
+    }
+
+    SECTION( "estorage and non-estorage pair fails EMEMORY bit" ) {
+        // Aggregated headers AND this bit; mixed pairs must drop it.
+        item drive( itype_usb_drive );
+        item rock( itype_test_rock );
+        REQUIRE( drive.is_estorage() );
+        REQUIRE_FALSE( rock.is_estorage() );
+        stacking_info info = drive.stacks_with( rock );
+        CHECK_FALSE( info.bits[tname::segments::EMEMORY] );
+    }
+
+    SECTION( "non-estorage pair short-circuits EMEMORY bit to true" ) {
+        item a( itype_test_rock );
+        item b( itype_test_rock );
+        REQUIRE_FALSE( a.is_estorage() );
+        stacking_info info = a.stacks_with( b );
+        CHECK( info.bits[tname::segments::EMEMORY] );
+    }
 }
 
 static item make_recipe_book( const std::set<recipe_id> &recipes )
