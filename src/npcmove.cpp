@@ -3537,15 +3537,16 @@ bool npc::enough_time_to_reload( const item &gun ) const
 void npc::aim( const Target_attributes &target_attributes )
 {
     const item_location weapon = get_wielded_item();
-    double aim_amount = weapon ? aim_per_move( *weapon, recoil ) : 0.0;
     const aim_mods_cache aim_cache = gen_aim_mods_cache( *weapon );
     int hold_moves = moves;
     double hold_recoil = recoil;
-    while( aim_amount > 0 && recoil > 0 && moves > 0 ) {
+    while( recoil > 0 && moves > 0 ) {
+        const double aim_amount = aim_per_move( *weapon, recoil, target_attributes, aim_cache );
+        if( aim_amount <= MIN_RECOIL_IMPROVEMENT ) {
+            break;
+        }
         moves--;
-        recoil -= aim_amount;
-        recoil = std::max( 0.0, recoil );
-        aim_amount = aim_per_move( *weapon, recoil, target_attributes, aim_cache );
+        recoil = std::max( 0.0, recoil - aim_amount );
     }
     add_msg_debug( debugmode::debug_filter::DF_NPC_COMBATAI,
                    "%s reduced recoil from %f to %f in %d moves",
