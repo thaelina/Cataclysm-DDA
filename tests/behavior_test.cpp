@@ -1535,6 +1535,53 @@ TEST_CASE( "npc_decision_follow_tree", "[npc][behavior]" )
 TEST_CASE( "bt_goal_category_mapping_follow", "[npc][behavior]" )
 {
     CHECK( bt_goal_to_category( "follow_player" ) == decision_category::follow );
+    CHECK( bt_goal_to_category( "follow_embarked" ) == decision_category::follow );
+}
+
+TEST_CASE( "npc_should_embark_predicate", "[npc][behavior]" )
+{
+    clear_map_without_vision();
+    map &here = get_map();
+    get_player_character().setpos( here, tripoint_bub_ms( 50, 50, 0 ) );
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    behavior::character_oracle_t oracle( &guy );
+
+    SECTION( "fires: walking_with + player in vehicle + NPC not in vehicle" ) {
+        get_player_character().in_vehicle = true;
+        guy.in_vehicle = false;
+        CHECK( oracle.npc_should_embark( "" ) == behavior::status_t::running );
+        CHECK( oracle.npc_embark_urgency( "" ) > 0.0f );
+        get_player_character().in_vehicle = false;
+    }
+    SECTION( "failure: not walking_with" ) {
+        guy.set_attitude( NPCATT_NULL );
+        get_player_character().in_vehicle = true;
+        CHECK( oracle.npc_should_embark( "" ) == behavior::status_t::failure );
+        CHECK( oracle.npc_embark_urgency( "" ) == Approx( 0.0f ) );
+        get_player_character().in_vehicle = false;
+    }
+    SECTION( "failure: player not in vehicle" ) {
+        get_player_character().in_vehicle = false;
+        CHECK( oracle.npc_should_embark( "" ) == behavior::status_t::failure );
+    }
+    SECTION( "failure: NPC already in vehicle" ) {
+        get_player_character().in_vehicle = true;
+        guy.in_vehicle = true;
+        CHECK( oracle.npc_should_embark( "" ) == behavior::status_t::failure );
+        get_player_character().in_vehicle = false;
+        guy.in_vehicle = false;
+    }
+    SECTION( "follow predicate suppressed under embark conditions: predicates mutex" ) {
+        get_player_character().in_vehicle = true;
+        guy.in_vehicle = false;
+        CHECK( oracle.npc_should_embark( "" ) == behavior::status_t::running );
+        CHECK( oracle.npc_is_following( "" ) == behavior::status_t::failure );
+        get_player_character().in_vehicle = false;
+    }
 }
 
 TEST_CASE( "follow_suppresses_duty_when_recruited", "[npc][behavior]" )
@@ -1762,13 +1809,24 @@ TEST_CASE( "bt_priority_matrix", "[npc][behavior]" )
         REQUIRE( rl_dist( guy.pos_abs(), get_player_character().pos_abs() ) <= 6 );
         CHECK( bt_goal( guy ) == "idle" );
     }
-    SECTION( "player in vehicle, NPC not: no follow" ) {
+    SECTION( "player in vehicle, NPC not: BT picks follow_embarked" ) {
         guy.set_attitude( NPCATT_FOLLOW );
         guy.rules.set_flag( ally_rule::follow_close );
         get_player_character().setpos( here, tripoint_bub_ms( 70, 50, 0 ) );
         get_player_character().in_vehicle = true;
+        guy.in_vehicle = false;
+        CHECK( bt_goal( guy ) == "follow_embarked" );
+        get_player_character().in_vehicle = false;
+    }
+    SECTION( "both in vehicle: BT picks idle (follow not pulled)" ) {
+        guy.set_attitude( NPCATT_FOLLOW );
+        guy.rules.set_flag( ally_rule::follow_close );
+        get_player_character().in_vehicle = true;
+        guy.in_vehicle = true;
+        CHECK( bt_goal( guy ) != "follow_embarked" );
         CHECK( bt_goal( guy ) != "follow_player" );
         get_player_character().in_vehicle = false;
+        guy.in_vehicle = false;
     }
     SECTION( "camp resident idle: free_time" ) {
         guy.set_mission( NPC_MISSION_CAMP_RESIDENT );

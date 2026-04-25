@@ -88,6 +88,7 @@ static const efftype_id effect_bouldering( "bouldering" );
 static const efftype_id effect_catch_up( "catch_up" );
 static const efftype_id effect_lying_down( "lying_down" );
 static const efftype_id effect_meth( "meth" );
+static const efftype_id effect_npc_run_away( "npc_run_away" );
 static const efftype_id effect_npc_suspend( "npc_suspend" );
 static const efftype_id effect_sleep( "sleep" );
 static const efftype_id effect_wet( "wet" );
@@ -4082,6 +4083,81 @@ TEST_CASE( "player_embarks_clears_follow_commitment", "[npc][behavior]" )
     guy.set_moves( 100 );
     guy.move();
     CHECK( guy.get_committed_goal() != "follow_player" );
+}
+
+// A close follower with no active combat action engages a hostile target in
+// range instead of standing idle.
+TEST_CASE( "follower_in_range_engages_target", "[npc][behavior][combat]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    Character &pc = get_player_character();
+    pc.setpos( here, tripoint_bub_ms( 50, 50, 0 ) );
+
+    npc &guy = spawn_npc( { 49, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.setpos( here, tripoint_bub_ms( 49, 50, 0 ) );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_wielded_item( item( itype_bat ) );
+
+    // Hostile zombie just past the player, within follow radius of NPC.
+    const tripoint_bub_ms zpos = pc.pos_bub() + point::east;
+    spawn_test_monster( "mon_zombie_brute_shocker", zpos );
+    here.build_map_cache( 0 );
+    guy.regen_ai_cache();
+    REQUIRE( guy.get_ai_danger() > NPC_DANGER_VERY_LOW );
+    REQUIRE( rl_dist( guy.pos_abs(), pc.pos_abs() ) <= guy.desired_follow_radius() );
+
+    guy.set_moves( 100 );
+    guy.move();
+    // Engaged target consumes moves; idle pause would leave them at 100.
+    CHECK( guy.get_moves() < 100 );
+}
+
+// A fleeing follower close to the player keeps fleeing and is not pulled
+// into combat by the engagement hook.
+TEST_CASE( "fleeing_follower_not_forced_to_attack", "[npc][behavior][combat]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    Character &pc = get_player_character();
+    pc.setpos( here, tripoint_bub_ms( 50, 50, 0 ) );
+
+    npc &guy = spawn_npc( { 49, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.setpos( here, tripoint_bub_ms( 49, 50, 0 ) );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+    guy.set_wielded_item( item( itype_bat ) );
+
+    const tripoint_bub_ms zpos = pc.pos_bub() + point::east;
+    monster &zomb = spawn_test_monster( "mon_zombie_brute_shocker", zpos );
+    here.build_map_cache( 0 );
+
+    guy.add_effect( effect_npc_run_away, 5_turns );
+    guy.regen_ai_cache();
+    REQUIRE( guy.has_effect( effect_npc_run_away ) );
+    REQUIRE( guy.get_ai_danger() > NPC_DANGER_VERY_LOW );
+    REQUIRE( rl_dist( guy.pos_abs(), pc.pos_abs() ) <= guy.desired_follow_radius() );
+
+    const int dist_before = rl_dist( guy.pos_abs(), zomb.pos_abs() );
+    guy.set_moves( 100 );
+    guy.move();
+    const int dist_after = rl_dist( guy.pos_abs(), zomb.pos_abs() );
+    // Fleeing NPC must not be forced into method_of_attack; distance to
+    // monster must not decrease (flee path moves away from target).
+    CHECK( dist_after >= dist_before );
 }
 
 TEST_CASE( "goto_order_beats_generic_follow", "[npc][behavior]" )

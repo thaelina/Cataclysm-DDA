@@ -296,7 +296,7 @@ decision_category bt_goal_to_category( const std::string &goal )
         goal == "start_fire" || goal == "seek_warmth" ) {
         return decision_category::needs;
     }
-    if( goal == "follow_player" ) {
+    if( goal == "follow_player" || goal == "follow_embarked" ) {
         return decision_category::follow;
     }
     if( goal == "goto_ordered_position" ) {
@@ -1727,6 +1727,8 @@ void npc::move()
                     if( !completed_goal ) {
                         completed_goal = ( new_goal != "follow_player" );
                     }
+                } else if( committed == "follow_embarked" ) {
+                    completed_goal = in_vehicle || ( new_goal != "follow_embarked" );
                 } else if( committed == "goto_ordered_position" ) {
                     completed_goal = !goto_to_this_pos || pos_abs() == *goto_to_this_pos;
                     if( !completed_goal ) {
@@ -1854,6 +1856,9 @@ void npc::move()
                 action = npc_return_to_guard_pos;
             } else if( new_goal == "follow_player" ) {
                 action = npc_follow_player;
+            } else if( new_goal == "follow_embarked" ) {
+                action = npc_follow_embarked;
+                path.clear();
             } else if( new_goal == "goto_ordered_position" ) {
                 action = npc_goto_to_this_pos;
             } else if( new_goal == "hold_position" ) {
@@ -1955,23 +1960,6 @@ void npc::move()
         }
     }
 
-    if( action == npc_undecided && is_walking_with() && goto_to_this_pos &&
-        !has_flag( json_flag_CANNOT_MOVE ) ) {
-        action = npc_goto_to_this_pos;
-    }
-
-    // check if in vehicle before doing any other follow activities
-    if( action == npc_undecided && is_walking_with() && player_character.in_vehicle &&
-        !in_vehicle ) {
-        action = npc_follow_embarked;
-        path.clear();
-    }
-
-    if( action == npc_undecided && can_follow_player_now() &&
-        rl_dist( pos_bub(), player_character.pos_bub() ) > desired_follow_radius() ) {
-        action = npc_follow_player;
-    }
-
     if( action == npc_undecided && attitude == NPCATT_ACTIVITY && !has_flag( json_flag_CANNOT_MOVE ) ) {
         if( has_stashed_activity() ) {
             if( !check_outbounds_activity( get_stashed_activity(), true ) ) {
@@ -2041,16 +2029,9 @@ void npc::move()
             action = npc_pause;
         }
 
-        // check if in vehicle before rushing off to fetch things
-        if( is_walking_with() && player_character.in_vehicle && !has_flag( json_flag_CANNOT_MOVE ) ) {
-            action = npc_follow_embarked;
-            path.clear();
-        } else if( fetching_item ) {
+        if( fetching_item ) {
             // Set to true if find_item() found something
             action = npc_pickup;
-        } else if( is_following() && !has_flag( json_flag_CANNOT_MOVE ) ) {
-            // No items, so follow the player?
-            action = npc_follow_player;
         }
         // Friendly NPCs who are followers/ doing tasks for the player should never get here.
         // This will revert them to a dynamic NPC state.
@@ -2061,21 +2042,41 @@ void npc::move()
         }
     }
 
-    /* Sometimes we'll be following the player at this point, but close enough that
-     * "following" means standing still.  If that's the case, if there are any
-     * monsters around, we should attack them after all!
-     *
-     * If we are following a embarked player and we are in a vehicle then shoot anyway
-     * as we are most likely riding shotgun
+    /* Idle follower (close-follow standing still, or riding shotgun in the
+     * player's vehicle) should engage nearby targets instead of standing
+     * around. Gate on passive actions so flee / heal / escape decisions
+     * taken earlier this turn are not overridden.
      */
+    const auto is_passive_follow_action = []( npc_action a ) {
+        switch( a ) {
+            case npc_undecided:
+            case npc_pause:
+            case npc_noop:
+            case npc_follow_player:
+            case npc_follow_embarked:
+                return true;
+            default:
+                return false;
+        }
+    };
     if( ai_cache.danger > 0 && target != nullptr &&
-        (
-            ( action == npc_follow_embarked && in_vehicle ) ||
-            ( action == npc_follow_player &&
-              ( rl_dist( pos_bub(), player_character.pos_bub() ) <= follow_distance() ||
-                posz() != player_character.posz() ) )
-        ) && !has_flag( json_flag_CANNOT_ATTACK ) ) {
-        action = method_of_attack();
+        is_passive_follow_action( action ) && !has_flag( json_flag_CANNOT_ATTACK ) ) {
+        bool engage = false;
+        if( player_character.in_vehicle && in_vehicle && is_walking_with() ) {
+            // Both must occupy the same vehicle; player in a different vehicle
+            // does not justify forcing combat.
+            const optional_vpart_position pvp = here.veh_at( player_character.pos_bub() );
+            const optional_vpart_position nvp = here.veh_at( pos_bub() );
+            engage = pvp && nvp && &pvp->vehicle() == &nvp->vehicle();
+        } else if( !player_character.in_vehicle && is_following() ) {
+            // is_following() excludes LEAD: leaders do not get pulled into
+            // close-follow combat. follow_distance() is the rule-driven radius.
+            engage = rl_dist( pos_bub(), player_character.pos_bub() ) <= follow_distance() ||
+                     posz() != player_character.posz();
+        }
+        if( engage ) {
+            action = method_of_attack();
+        }
     }
 
     add_msg_debug( debugmode::DF_NPC, "%s chose action %s.", get_name(), npc_action_name( action ) );

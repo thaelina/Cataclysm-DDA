@@ -430,6 +430,24 @@ float character_oracle_t::npc_following_urgency( std::string_view ) const
     return std::clamp( 0.3f + ( dist - radius ) * 0.015f, 0.3f, 0.6f );
 }
 
+status_t character_oracle_t::npc_should_embark( std::string_view ) const
+{
+    const npc *n = dynamic_cast<const npc *>( subject );
+    if( !n || !n->is_walking_with() || n->has_flag( json_flag_CANNOT_MOVE ) ) {
+        return status_t::failure;
+    }
+    const Character &player = get_player_character();
+    if( !player.in_vehicle || n->in_vehicle ) {
+        return status_t::failure;
+    }
+    return status_t::running;
+}
+
+float character_oracle_t::npc_embark_urgency( std::string_view ) const
+{
+    return npc_should_embark( "" ) == status_t::running ? 0.6f : 0.0f;
+}
+
 status_t character_oracle_t::npc_has_goto_order( std::string_view ) const
 {
     const npc *n = dynamic_cast<const npc *>( subject );
