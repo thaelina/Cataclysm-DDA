@@ -3351,6 +3351,15 @@ class item : public visitable
          * This flag is reset to `true` if item tags are changed.
          */
         bool requires_tags_processing = true;
+        uint64_t hot_flags_own = 0;
+        uint64_t hot_flags_inherited = 0;
+    public:
+        // Combined hot-flag bits across type, instance, and inherited contents.
+        uint64_t combined_hot_flags() const;
+        uint64_t own_hot_flags() const {
+            return hot_flags_own;
+        }
+    private:
         cata::heap<FlagsSetType> item_tags; // generic item specific flags
         cata::heap<FlagsSetType> inherited_tags_cache;
         cata::heap<FlagsSetType> prefix_tags_cache; // flags that will add prefixes to this item
