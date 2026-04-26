@@ -1728,7 +1728,7 @@ void npc::move()
                         completed_goal = ( new_goal != "follow_player" );
                     }
                 } else if( committed == "follow_embarked" ) {
-                    completed_goal = in_vehicle || ( new_goal != "follow_embarked" );
+                    completed_goal = ( new_goal != "follow_embarked" );
                 } else if( committed == "goto_ordered_position" ) {
                     completed_goal = !goto_to_this_pos || pos_abs() == *goto_to_this_pos;
                     if( !completed_goal ) {
@@ -2375,6 +2375,12 @@ void npc::execute_action( npc_action action )
                 break;
             }
             vehicle *const veh = &vp->vehicle();
+            // Defensive: BT predicate may have committed embark on a parked
+            // vehicle that started moving before this action ran. Wait.
+            if( veh->velocity != 0 ) {
+                move_pause();
+                break;
+            }
 
             // Try to find the last destination
             // This is mount point, not actual position

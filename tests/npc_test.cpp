@@ -492,7 +492,7 @@ TEST_CASE( "npc-board-player-vehicle" )
             /* Uncomment for some extra info when test fails
             debug_mode = true;
             debugmode::enabled_filters.clear();
-            debugmode::enabled_filters.emplace_back( debugmode::DF_NPC );
+            debugmode::enabled_filters.emplace( debugmode::DF_NPC );
             REQUIRE( debugmode::enabled_filters.size() == 1 );
             */
 
@@ -4083,6 +4083,54 @@ TEST_CASE( "player_embarks_clears_follow_commitment", "[npc][behavior]" )
     guy.set_moves( 100 );
     guy.move();
     CHECK( guy.get_committed_goal() != "follow_player" );
+}
+
+// Followers wait while the player is in a moving vehicle: don't path into
+// the vehicle's trajectory, don't try to board until the player parks.
+TEST_CASE( "follower_yields_to_moving_player_vehicle", "[npc][behavior][vehicle]" )
+{
+    clear_map_without_vision();
+    clear_avatar();
+    map &here = get_map();
+    Character &pc = get_player_character();
+    pc.setpos( here, tripoint_bub_ms( 65, 50, 0 ) );
+
+    npc &guy = spawn_npc( { 50, 50 }, "test_talker" );
+    clear_character( guy, true );
+    guy.set_fac( faction_your_followers );
+    guy.set_attitude( NPCATT_FOLLOW );
+    guy.rules.set_flag( ally_rule::follow_close );
+    guy.set_mission( NPC_MISSION_NULL );
+    guy.guard_pos = std::nullopt;
+    guy.clear_ai_guard_pos();
+
+    vehicle *veh = here.add_vehicle( vehicle_prototype_test_rv, pc.pos_bub(),
+                                     0_degrees, 100, 0 );
+    REQUIRE( veh != nullptr );
+    here.board_vehicle( pc.pos_bub(), &pc );
+    REQUIRE( pc.in_vehicle );
+    REQUIRE_FALSE( guy.in_vehicle );
+
+    behavior::character_oracle_t oracle( &guy );
+
+    SECTION( "parked: embark fires" ) {
+        veh->velocity = 0;
+        CHECK( oracle.npc_should_embark( "" ) == behavior::status_t::running );
+        CHECK( oracle.npc_embark_urgency( "" ) > 0.0f );
+    }
+    SECTION( "moving: follow and embark both fail, NPC waits" ) {
+        veh->velocity = 800;
+        CHECK( oracle.npc_is_following( "" ) == behavior::status_t::failure );
+        CHECK( oracle.npc_following_urgency( "" ) == Approx( 0.0f ) );
+        CHECK( oracle.npc_should_embark( "" ) == behavior::status_t::failure );
+        CHECK( oracle.npc_embark_urgency( "" ) == Approx( 0.0f ) );
+
+        const tripoint_abs_ms before = guy.pos_abs();
+        guy.set_moves( 100 );
+        guy.move();
+        // BT picks idle, dispatch returns npc_pause; NPC stays put.
+        CHECK( guy.pos_abs() == before );
+    }
 }
 
 // A close follower with no active combat action engages a hostile target in
