@@ -695,5 +695,14 @@
         ]
       }
     ]
+  },
+  {
+    "type": "effect_on_condition",
+    "id": "EOC_NL_PEEK_DOWN_CHASM",
+    "effect": [
+      {
+        "u_message": "At a glance this just looks like darkness.  Then, gazing deeper, you think it might be full of stars.  Still deeper, perhaps those stars are eyes?"
+      }
+    ]
   }
 ]
