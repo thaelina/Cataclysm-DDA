@@ -897,7 +897,7 @@ aim_mods_cache Character::gen_aim_mods_cache( const item &gun )const
 
 double Character::fastest_aiming_method_speed( const item &gun, double recoil,
         const Target_attributes &target_attributes,
-        const std::optional<std::reference_wrapper<const parallax_cache>> parallax_cache ) const
+        const parallax_cache &parallaxes ) const
 {
     // Get fastest aiming method that can be used to improve aim further below @ref recoil.
 
@@ -933,13 +933,7 @@ double Character::fastest_aiming_method_speed( const item &gun, double recoil,
     const float light_limit = 120.0f;
     bool laser_light_available = target_attributes.range <= ( base_distance + get_per() ) * std::max(
                                      1.0f - target_attributes.light / light_limit, 0.0f ) && target_attributes.visible;
-    // There are only two kinds of parallaxes, one with zoom and one without. So cache them.
-    std::vector<std::optional<int>> parallaxes;
-    parallaxes.resize( 2 );
-    if( parallax_cache.has_value() ) {
-        parallaxes[0].emplace( parallax_cache.value().get().parallax_without_zoom );
-        parallaxes[1].emplace( parallax_cache.value().get().parallax_with_zoom );
-    }
+
     for( const item *e : gun.gunmods() ) {
         const islot_gunmod &mod = *e->type->gunmod;
         if( mod.sight_dispersion < 0 || mod.field_of_view <= 0 ) {
@@ -948,12 +942,11 @@ double Character::fastest_aiming_method_speed( const item &gun, double recoil,
         if( e->has_flag( flag_LASER_SIGHT ) && !laser_light_available ) {
             continue;
         }
-        bool zoom = e->has_flag( flag_ZOOM );
-        // zoom==true will access parallaxes[1], zoom==false will access parallaxes[0].
-        int parallax = parallaxes[static_cast<int>( zoom )].has_value() ? parallaxes[static_cast<int>
-                       ( zoom )].value() : get_character_parallax( zoom );
-        parallaxes[static_cast<int>( zoom )].emplace( parallax );
-        // Maunal expansion of effective_dispersion() for performance.
+
+        int parallax = e->has_flag( flag_ZOOM ) ? parallaxes.parallax_with_zoom :
+                       parallaxes.parallax_without_zoom;
+
+        // Manual expansion of effective_dispersion() for performance.
         double e_effective_dispersion = parallax + mod.sight_dispersion;
 
         // The character can hardly get the aiming speed bonus from a non-magnifier sight when aiming at a target that is too far or too small
@@ -1043,16 +1036,14 @@ double Character::aim_factor_from_length( const item &gun ) const
 
 double Character::aim_per_move( const item &gun, double recoil,
                                 const Target_attributes &target_attributes,
-                                std::optional<std::reference_wrapper<const aim_mods_cache>> aim_cache ) const
+                                const aim_mods_cache &aim_cache ) const
 {
     if( !gun.is_gun() ) {
         return 0.0;
     }
-    bool use_cache = aim_cache.has_value();
-    double sight_speed_modifier = fastest_aiming_method_speed( gun, recoil, target_attributes,
-                                  use_cache ? std::make_optional( std::ref( aim_cache.value().get().parallaxes ) ) : std::nullopt );
-    int limit = use_cache ? aim_cache.value().get().limit :
-                most_accurate_aiming_method_limit( gun );
+    const double sight_speed_modifier = fastest_aiming_method_speed( gun, recoil, target_attributes,
+                                        aim_cache.parallaxes );
+    const int limit = aim_cache.limit;
     if( sight_speed_modifier == INT_MIN ) {
         // No suitable sights (already at maximum aim).
         return 0;
@@ -1064,26 +1055,18 @@ double Character::aim_per_move( const item &gun, double recoil,
     // Base speed is non-zero to prevent extreme rate changes as aim speed approaches 0.
     double aim_speed = 10.0;
 
-    skill_id gun_skill = gun.gun_skill();
+    const skill_id gun_skill = gun.gun_skill();
 
     aim_speed += sight_speed_modifier;
 
-    if( !use_cache ) {
-        // Ranges [-1.5 - 3.5] for archery Ranges [0 - 2.5] for others
-        aim_speed += get_modifier( character_modifier_aim_speed_skill_mod, gun_skill );
+    // Ranges [-1.5 - 3.5] for archery Ranges [0 - 2.5] for others
+    aim_speed += aim_cache.aim_speed_skill_mod;
 
-        /** @EFFECT_DEX increases aiming speed */
-        // every DEX increases 0.5 aim_speed
-        aim_speed += get_modifier( character_modifier_aim_speed_dex_mod );
+    /** @EFFECT_DEX increases aiming speed */
+    // every DEX increases 0.5 aim_speed
+    aim_speed += aim_cache.aim_speed_dex_mod;
 
-        aim_speed *= get_modifier( character_modifier_aim_speed_mod );
-    } else {
-        aim_speed += aim_cache.value().get().aim_speed_skill_mod;
-
-        aim_speed += aim_cache.value().get().aim_speed_dex_mod;
-
-        aim_speed *= aim_cache.value().get().aim_speed_mod;
-    }
+    aim_speed *= aim_cache.aim_speed_mod;
 
     // finally multiply everything by a harsh function that is eliminated by 7.5 gunskill
     aim_speed /= std::max( 1.0, 2.5 - 0.2 * get_skill_level( gun_skill ) );
@@ -1091,24 +1074,19 @@ double Character::aim_per_move( const item &gun, double recoil,
     aim_speed *= std::max( recoil / MAX_RECOIL, 1 - logarithmic_range( 0, MAX_RECOIL, recoil ) );
 
     // add 4 max aim speed per skill up to 5 skill, then 1 per skill for skill 5-10
-    double base_aim_speed_cap = 5.0 +  1.0 * get_skill_level( gun_skill ) + std::max( 10.0,
-                                3.0 * get_skill_level( gun_skill ) );
-    if( !use_cache ) {
-        // This upper limit usually only affects the first half of the aiming process
-        // Pistols have a much higher aiming speed limit
-        aim_speed = std::min( aim_speed, base_aim_speed_cap * aim_factor_from_volume( gun ) );
+    const double base_aim_speed_cap = 5.0
+                                      + 1.0 * get_skill_level( gun_skill )
+                                      + std::max( 10.0, 3.0 * get_skill_level( gun_skill ) );
 
-        // When the character is in an open area, it will not be affected by the length of the weapon.
-        // This upper limit usually only affects the first half of the aiming process
-        // Weapons shorter than carbine are usually not affected by it
-        aim_speed = std::min( aim_speed, base_aim_speed_cap * aim_factor_from_length( gun ) );
-    } else {
-        aim_speed = std::min( aim_speed,
-                              base_aim_speed_cap * aim_cache.value().get().aim_factor_from_volume );
+    // This upper limit usually only affects the first half of the aiming process
+    // Pistols have a much higher aiming speed limit
+    aim_speed = std::min( aim_speed, base_aim_speed_cap * aim_cache.aim_factor_from_volume );
 
-        aim_speed = std::min( aim_speed,
-                              base_aim_speed_cap * aim_cache.value().get().aim_factor_from_length );
-    }
+    // When the character is in an open area, it will not be affected by the length of the weapon.
+    // This upper limit usually only affects the first half of the aiming process
+    // Weapons shorter than carbine are usually not affected by it
+    aim_speed = std::min( aim_speed, base_aim_speed_cap * aim_cache.aim_factor_from_length );
+
     // Just a raw scaling factor.
     aim_speed *= 2.4;
 
