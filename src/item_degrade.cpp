@@ -1074,14 +1074,23 @@ bool item::can_repair_with( const material_id &mat_ident ) const
 
 bool item::is_broken() const
 {
-    return has_flag( flag_ITEM_BROKEN ) || has_fault_flag( std::string( "ITEM_BROKEN" ) );
+    constexpr uint64_t bit = static_cast<uint64_t>( hot_flag_bit::ITEM_BROKEN );
+    if( combined_hot_flags() & bit ) {
+        return true;
+    }
+    return has_fault_flag( std::string( "ITEM_BROKEN" ) );
 }
 
 bool item::is_broken_on_active() const
 {
-    return has_flag( flag_ITEM_BROKEN ) ||
-           has_fault_flag( std::string( "ITEM_BROKEN" ) ) ||
-           ( wetness && has_flag( flag_WATER_BREAK_ACTIVE ) );
+    constexpr uint64_t bit = static_cast<uint64_t>( hot_flag_bit::ITEM_BROKEN );
+    if( combined_hot_flags() & bit ) {
+        return true;
+    }
+    if( has_fault_flag( std::string( "ITEM_BROKEN" ) ) ) {
+        return true;
+    }
+    return wetness && has_flag( flag_WATER_BREAK_ACTIVE );
 }
 
 std::set<fault_id> item::faults_potential() const

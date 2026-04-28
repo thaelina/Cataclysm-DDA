@@ -101,8 +101,6 @@ static const efftype_id effect_weed_high( "weed_high" );
 
 static const fault_id fault_emp_reboot( "fault_emp_reboot" );
 
-static const flag_id json_flag_LOCATION_PRECISE_CLOSEST_CITY( "LOCATION_PRECISE_CLOSEST_CITY" );
-
 static const furn_str_id furn_f_metal_smoking_rack_active( "f_metal_smoking_rack_active" );
 static const furn_str_id furn_f_smoking_rack_active( "f_smoking_rack_active" );
 static const furn_str_id furn_f_water_mill_active( "f_water_mill_active" );
@@ -448,6 +446,7 @@ item &item::convert( const itype_id &new_type, Character *carrier )
 
     item_counter = 0;
     update_link_traits();
+    update_inherited_flags();
     update_prefix_suffix_flags();
     return *this;
 }
@@ -649,9 +648,10 @@ bool _stacks_weapon_mods( item const &lhs, item const &rhs )
 {
     item const *const lb = lhs.is_gun() ? lhs.gunmod_find( itype_barrel_small ) : nullptr;
     item const *const rb = rhs.is_gun() ? rhs.gunmod_find( itype_barrel_small ) : nullptr;
+    constexpr uint64_t mask = static_cast<uint64_t>( hot_flag_bit::REMOVED_STOCK ) |
+                              static_cast<uint64_t>( hot_flag_bit::DIAMOND );
     return ( ( lb && rb ) || ( !lb && !rb ) ) &&
-           lhs.has_flag( flag_REMOVED_STOCK ) == rhs.has_flag( flag_REMOVED_STOCK ) &&
-           lhs.has_flag( flag_DIAMOND ) == rhs.has_flag( flag_DIAMOND );
+           ( lhs.combined_hot_flags() & mask ) == ( rhs.combined_hot_flags() & mask );
 }
 
 bool _stacks_location_hint( item const &lhs, item const &rhs )
@@ -684,8 +684,8 @@ bool _stacks_location_hint( item const &lhs, item const &rhs )
 bool _stacks_location_precise_closest_city( item const &lhs, item const &rhs )
 {
     // Skip the closest_city sort unless both items can actually display the segment.
-    if( !lhs.has_flag( json_flag_LOCATION_PRECISE_CLOSEST_CITY ) ||
-        !rhs.has_flag( json_flag_LOCATION_PRECISE_CLOSEST_CITY ) ) {
+    constexpr uint64_t bit = static_cast<uint64_t>( hot_flag_bit::LOC_CITY );
+    if( !( lhs.combined_hot_flags() & bit ) || !( rhs.combined_hot_flags() & bit ) ) {
         return true;
     }
     static const std::string omt_loc_var = "spawn_location";
@@ -724,8 +724,10 @@ bool _stacks_rot( item const &lhs, item const &rhs, bool combine_liquid )
 
 bool _stacks_mushy_dirty( item const &lhs, item const &rhs )
 {
-    return lhs.has_flag( flag_MUSHY ) == rhs.has_flag( flag_MUSHY ) &&
-           lhs.has_own_flag( flag_DIRTY ) == rhs.has_own_flag( flag_DIRTY );
+    constexpr uint64_t mushy = static_cast<uint64_t>( hot_flag_bit::MUSHY );
+    constexpr uint64_t dirty = static_cast<uint64_t>( hot_flag_bit::DIRTY );
+    return ( lhs.combined_hot_flags() & mushy ) == ( rhs.combined_hot_flags() & mushy ) &&
+           ( lhs.own_hot_flags() & dirty ) == ( rhs.own_hot_flags() & dirty );
 }
 
 bool _stacks_food_status( item const &lhs, item const &rhs )
@@ -737,32 +739,36 @@ bool _stacks_food_status( item const &lhs, item const &rhs )
 
 bool _stacks_food_traits( item const &lhs, item const &rhs )
 {
+    constexpr uint64_t mask = static_cast<uint64_t>( hot_flag_bit::HIDDEN_POISON ) |
+                              static_cast<uint64_t>( hot_flag_bit::HIDDEN_HALLU );
     return ( !lhs.is_food() && !rhs.is_food() ) ||
            ( lhs.is_food() && rhs.is_food() &&
-             lhs.has_flag( flag_HIDDEN_POISON ) == rhs.has_flag( flag_HIDDEN_POISON ) &&
-             lhs.has_flag( flag_HIDDEN_HALLU ) == rhs.has_flag( flag_HIDDEN_HALLU ) );
+             ( lhs.combined_hot_flags() & mask ) == ( rhs.combined_hot_flags() & mask ) );
 }
 
 bool _stacks_food_irradiated( item const &lhs, item const &rhs )
 {
-    return lhs.has_flag( flag_IRRADIATED ) == rhs.has_flag( flag_IRRADIATED );
+    constexpr uint64_t bit = static_cast<uint64_t>( hot_flag_bit::IRRADIATED );
+    return ( lhs.combined_hot_flags() & bit ) == ( rhs.combined_hot_flags() & bit );
 }
 
 bool _stacks_food_perishable( item const &lhs, item const &rhs, bool check_cat )
 {
+    constexpr uint64_t bit = static_cast<uint64_t>( hot_flag_bit::INEDIBLE );
     return !check_cat || ( !lhs.is_food() && !rhs.is_food() ) ||
            ( lhs.is_food() && rhs.is_food() && lhs.goes_bad() == rhs.goes_bad() &&
-             lhs.has_flag( flag_INEDIBLE ) == rhs.has_flag( flag_INEDIBLE ) );
+             ( lhs.combined_hot_flags() & bit ) == ( rhs.combined_hot_flags() & bit ) );
 }
 
 bool _stacks_clothing_size( item const &lhs, item const &rhs )
 {
     avatar &u = get_avatar();
     item::sizing const u_sizing = lhs.get_sizing( u );
+    constexpr uint64_t mask = static_cast<uint64_t>( hot_flag_bit::FIT ) |
+                              static_cast<uint64_t>( hot_flag_bit::VARSIZE );
     return u_sizing == rhs.get_sizing( u ) &&
            ( u_sizing == item::sizing::ignore ||
-             ( lhs.has_flag( flag_FIT ) == rhs.has_flag( flag_FIT ) &&
-               lhs.has_flag( flag_VARSIZE ) == rhs.has_flag( flag_VARSIZE ) ) );
+             ( lhs.combined_hot_flags() & mask ) == ( rhs.combined_hot_flags() & mask ) );
 }
 
 bool _stacks_wetness( item const &lhs, item const &rhs, bool precise )
@@ -772,10 +778,11 @@ bool _stacks_wetness( item const &lhs, item const &rhs, bool precise )
 
 bool _stacks_cbm_status( item const &lhs, item const &rhs )
 {
+    constexpr uint64_t mask = static_cast<uint64_t>( hot_flag_bit::NO_PACKED ) |
+                              static_cast<uint64_t>( hot_flag_bit::NO_STERILE );
     return ( !lhs.is_bionic() && !rhs.is_bionic() ) ||
            ( lhs.is_bionic() && rhs.is_bionic() &&
-             lhs.has_flag( flag_NO_PACKED ) == rhs.has_flag( flag_NO_PACKED ) &&
-             lhs.has_flag( flag_NO_STERILE ) == rhs.has_flag( flag_NO_STERILE ) );
+             ( lhs.combined_hot_flags() & mask ) == ( rhs.combined_hot_flags() & mask ) );
 }
 
 bool _stacks_ethereal( item const &lhs, item const &rhs )
@@ -787,9 +794,10 @@ bool _stacks_ethereal( item const &lhs, item const &rhs )
 
 bool _stacks_ups( item const &lhs, item const &rhs )
 {
+    constexpr uint64_t bit = static_cast<uint64_t>( hot_flag_bit::USE_UPS );
     return ( !lhs.is_tool() && !rhs.is_tool() ) ||
            ( lhs.is_tool() && rhs.is_tool() &&
-             lhs.has_flag( flag_USE_UPS ) == rhs.has_flag( flag_USE_UPS ) );
+             ( lhs.combined_hot_flags() & bit ) == ( rhs.combined_hot_flags() & bit ) );
 }
 
 bool _stacks_mods( item const &lhs, item const &rhs )
@@ -1461,6 +1469,12 @@ void item::update_inherited_flags()
         }
     }
 
+    hot_flags_inherited = 0;
+    const FlagsSetType &inherited = inherited_tags_cache;
+    for( const flag_id &f : inherited ) {
+        hot_flags_inherited |= hot_bit_for( f );
+    }
+
     update_prefix_suffix_flags();
 }
 
@@ -2095,7 +2109,13 @@ int item::lift_strength() const
 void item::unset_flags()
 {
     item_tags.clear();
+    hot_flags_own = 0;
     requires_tags_processing = true;
+}
+
+uint64_t item::combined_hot_flags() const
+{
+    return ( type ? type->hot_flag_bits : 0 ) | hot_flags_own | hot_flags_inherited;
 }
 
 bool item::has_own_flag( const flag_id &f ) const
@@ -2124,6 +2144,7 @@ item &item::set_flag( const flag_id &flag )
 {
     if( flag.is_valid() ) {
         item_tags.insert( flag );
+        hot_flags_own |= hot_bit_for( flag );
         update_prefix_suffix_flags( flag );
         requires_tags_processing = true;
     } else {
@@ -2153,6 +2174,7 @@ bool item::has_vitamin( const vitamin_id &v ) const
 item &item::unset_flag( const flag_id &flag )
 {
     item_tags.erase( flag );
+    hot_flags_own &= ~hot_bit_for( flag );
     update_prefix_suffix_flags();
     requires_tags_processing = true;
     return *this;
