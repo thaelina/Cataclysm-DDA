@@ -316,5 +316,13 @@
     "faults_removed": [ "fault_denim_hole" ],
     "copy-from": "mend_armor_cotton_tear_stitch",
     "requirements": [ [ "tailoring_denim_small_simple", 1 ] ]
+  },
+  {
+    "type": "fault_fix",
+    "id": "mend_armor_nl_phase_goo",
+    "name": "Wipe off the out-of-phase goo",
+    "faults_removed": [ "fault_nl_phase_goo" ],
+    "success_msg": "You wipe off the goo.",
+    "time": "120 s"
   }
 ]
