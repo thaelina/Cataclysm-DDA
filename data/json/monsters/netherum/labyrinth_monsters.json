@@ -107,15 +107,20 @@
     "special_attacks": [
       {
         "type": "gun",
-        "cooldown": 5,
-        "move_cost": 100,
-        "gun_type": "feral_human_thrown_rock",
-        "ammo_type": "bone_dart",
-        "fake_skills": [ [ "throw", 5 ] ],
-        "fake_str": 20,
-        "require_targeting_player": false,
-        "ranges": [ [ 0, 12, "DEFAULT" ] ],
-        "description": "The turret launches a bony dart at you!"
+        "cooldown": 20,
+        "move_cost": 400,
+        "gun_type": "nl_turret_phase_goo_thrower",
+        "fake_skills": [ [ "gun", 5 ] ],
+        "fake_dex": 12,
+        "ranges": [ [ 0, 25, "DEFAULT" ] ],
+        "require_targeting_npc": true,
+        "require_targeting_monster": true,
+        "target_moving_vehicles": true,
+        "laser_lock": false,
+        "targeting_sound": "clacking bone and cracking sinew.",
+        "targeting_volume": 50,
+        "targeting_cost": 800,
+        "targeting_timeout_extend": -10
       }
     ],
     "special_when_hit": [ "RETURN_FIRE", 100 ],

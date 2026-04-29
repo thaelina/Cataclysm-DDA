@@ -161,5 +161,20 @@
     "name": { "str": "Hole" },
     "description": "There's a big hole in the fabric.",
     "copy-from": "fault_cotton_hole"
+  },
+  {
+    "type": "fault",
+    "id": "fault_nl_phase_goo",
+    "name": { "str": "Out of phase" },
+    "description": "The object is covered in dimensionally-altered goo, lowering its protective value.  You think you could mend the problem by just wiping it off.",
+    "item_prefix": "out-of-phase",
+    "message": "Out-of-phase goo sticks to the %s!",
+    "degradation_mod": 0,
+    "price_modifier": 0,
+    "armor_mod": [
+      { "damage_id": "bash", "multiply": 0.5 },
+      { "damage_id": "cut", "multiply": 0.5 },
+      { "damage_id": "stab", "multiply": 0.5 }
+    ]
   }
 ]
