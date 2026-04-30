@@ -2400,10 +2400,7 @@
     "has_fume": true,
     "immunity_data": { "body_part_env_resistance": [ [ "mouth", 15 ] ], "flags": [ "INHALED_TOXIN_IMMUNE" ] },
     "priority": 8,
-    "half_life": "2 minutes",
-    "phase": "gas",
-    "display_items": true,
-    "display_field": true,
-    "looks_like": "fd_nuke_gas"
+    "half_life": "30 seconds",
+    "phase": "gas"
   }
 ]
